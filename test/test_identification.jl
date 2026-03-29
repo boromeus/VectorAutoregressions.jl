@@ -257,4 +257,56 @@ include("test_helpers.jl")
         # P should be orthonormal (or close)
         @test P' * P ≈ I(K) atol = 1e-8
     end
+
+    # ─── _check_sign_with_flip ──────────────────────────────────────────────
+    @testset "_check_sign_with_flip" begin
+        K = 2
+        hor = 4
+
+        @testset "original satisfies" begin
+            ir = ones(K, hor, K)
+            restrictions = ["y(1,1,1)>0"]
+            sat, fsign = VectorAutoregressions._check_sign_with_flip(ir, restrictions, K)
+            @test sat == true
+            @test fsign == 1
+        end
+
+        @testset "negated satisfies" begin
+            # IRF is all negative → original fails y>0, but -ir satisfies
+            ir = -ones(K, hor, K)
+            restrictions = ["y(1,1,1)>0"]
+            sat, fsign = VectorAutoregressions._check_sign_with_flip(ir, restrictions, K)
+            @test sat == true
+            @test fsign == -1
+        end
+
+        @testset "neither satisfies" begin
+            ir = ones(K, hor, K)
+            # Require both positive and negative — impossible
+            restrictions = ["y(1,1,1)>0", "y(2,1,1)<0"]
+            ir[2, 1, 1] = 1.0  # violates <0
+            sat, fsign = VectorAutoregressions._check_sign_with_flip(ir, restrictions, K)
+            # negated: ir[1,1,1]=-1 violates >0, ir[2,1,1]=-1 satisfies <0
+            # so neither original nor negated satisfies both
+            @test sat == false
+        end
+    end
+
+    # ─── irf_sign_restriction with sign-flip ────────────────────────────────
+    @testset "irf_sign_restriction — sign flip doubles acceptance" begin
+        rng_sr = Random.MersenneTwister(123)
+        K = 2
+        p = 1
+        Phi = [0.5 0.1; 0.0 0.4]
+        Sigma = [1.0 0.2; 0.2 0.8]
+
+        # Simple restriction that should be found
+        restrictions = ["y(1,1,1)>0"]
+        ir, Omeg = irf_sign_restriction(Phi, Sigma, 8, restrictions;
+                                         max_rotations=5000, rng=rng_sr)
+        @test !any(isnan.(ir))
+        @test !any(isnan.(Omeg))
+        # Verify the restriction is satisfied
+        @test ir[1, 1, 1] > 0
+    end
 end

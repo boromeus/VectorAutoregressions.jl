@@ -123,9 +123,32 @@ function max_horizon_sign(restrictions::Vector{String}, K::Int)
 end
 
 """
+    _check_sign_with_flip(ir, restrictions, K)
+
+Check sign restrictions on `ir` and also on `-ir` (matching MATLAB
+`checkrestrictions2`).  Returns `(satisfied, fsign)` where `fsign` is
+`1` if the original IRFs satisfy or `-1` if the negated IRFs satisfy.
+"""
+function _check_sign_with_flip(ir::AbstractArray{<:Real,3},
+                               restrictions::Vector{String}, K::Int)
+    if check_sign_restrictions(ir, restrictions, K)
+        return true, 1
+    end
+    if check_sign_restrictions(-ir, restrictions, K)
+        return true, -1
+    end
+    return false, 1
+end
+
+"""
     irf_sign_restriction(Phi, Sigma, hor, restrictions; max_rotations=30000, rng)
 
 Compute IRFs under sign restrictions using acceptance sampling.
+
+Matches MATLAB `iresponse_sign.m` / `checkrestrictions2`:
+both the original and negated IRFs are checked, doubling the effective
+acceptance rate.  When the negated set satisfies, the rotation is
+flipped (`fsign * Omega`) and the IRFs are scaled by `fsign`.
 """
 function irf_sign_restriction(Phi::AbstractMatrix, Sigma::AbstractMatrix,
                               hor::Int, restrictions::Vector{String};
@@ -137,9 +160,11 @@ function irf_sign_restriction(Phi::AbstractMatrix, Sigma::AbstractMatrix,
     for tol in 1:max_rotations
         Omega = generate_rotation_matrix(K; rng=rng)
         ir = compute_irf(Phi, Sigma, max(hor, hor0); Omega=Omega)
-        if check_sign_restrictions(ir, restrictions, K)
-            ir_full = compute_irf(Phi, Sigma, hor; Omega=Omega)
-            return ir_full, Omega
+        satisfied, fsign = _check_sign_with_flip(ir, restrictions, K)
+        if satisfied
+            Omeg = fsign * Omega
+            ir_full = compute_irf(Phi, Sigma, hor; Omega=Omeg)
+            return ir_full, Omeg
         end
     end
 

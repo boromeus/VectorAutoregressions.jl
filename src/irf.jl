@@ -166,10 +166,15 @@ end
 """
     compute_irf_heterosked(Phi, residuals, regimes, hor, p)
 
-Compute IRFs using heteroskedasticity‑based identification (Rigobon 2003).
+Compute IRFs using heteroskedasticity‑based identification.
+Reference: Sims (2020), "SVAR Identification Through Heteroskedasticity
+with Misspecified Regimes".
 
-The method exploits differences in the reduced‑form covariance across
-volatility regimes to recover the structural impact matrix.
+Matches MATLAB `iresponse_heterosked.m`:
+1. Compute regime‑specific covariances `S0`, `S1`.
+2. SVD of `S0 \\ S1` → singular values `S` become the "covariance" and
+   right singular vectors `V` become the rotation `Omega`.
+3. Call `compute_irf(Phi, S, hor; Omega=V)`.
 
 # Arguments
 - `Phi`:       (K*p + nx) × K coefficient matrix (AR part in first K*p rows).
@@ -179,7 +184,7 @@ volatility regimes to recover the structural impact matrix.
 - `p`:         lag order.
 
 # Returns
-`(ir, A)` where `ir` is K × hor × K and `A` is the K × K structural impact matrix.
+`(ir, Omega)` where `ir` is K × hor × K and `Omega` is the K × K rotation.
 """
 function compute_irf_heterosked(Phi::AbstractMatrix, residuals::AbstractMatrix,
                                 regimes::AbstractVector{<:Integer},
@@ -192,65 +197,29 @@ function compute_irf_heterosked(Phi::AbstractMatrix, residuals::AbstractMatrix,
     length(labels) >= 2 ||
         throw(ArgumentError("need at least 2 distinct regimes, got $(length(labels))"))
 
-    # Compute regime‑specific covariance matrices
-    Sigmas = Dict{eltype(labels), Matrix{Float64}}()
+    # Compute regime‑specific covariance matrices (matching MATLAB cov())
     for lab in labels
         idx = findall(regimes .== lab)
         length(idx) >= K + 1 ||
             throw(ArgumentError("regime $lab has only $(length(idx)) observations, need at least $(K+1)"))
-        u = residuals[idx, :]
-        Sigmas[lab] = (u .- mean(u, dims=1))' * (u .- mean(u, dims=1)) / (length(idx) - 1)
     end
 
-    # Rigobon (2003): use difference Σ₁ − Σ₂
-    Sigma1 = Sigmas[labels[1]]
-    Sigma2 = Sigmas[labels[2]]
-    Delta = Sigma1 - Sigma2
+    idx0 = findall(regimes .== labels[1])
+    idx1 = findall(regimes .== labels[2])
+    u0 = residuals[idx0, :]
+    u1 = residuals[idx1, :]
+    S0 = (u0 .- mean(u0, dims=1))' * (u0 .- mean(u0, dims=1)) / (length(idx0) - 1)
+    S1 = (u1 .- mean(u1, dims=1))' * (u1 .- mean(u1, dims=1)) / (length(idx1) - 1)
 
-    # Eigendecomposition of Σ₁⁻¹ * Δ to recover structural columns
-    # If Σ_r = A D_r A' for regime r, then Σ₁⁻¹ Δ = A (D₁ - D₂)⁻¹ D₁⁻¹ ... — instead
-    # use joint decomposition: Σ₁ = A D₁ A',  Σ₂ = A D₂ A'
-    # ⟹ Σ₁⁻¹ Σ₂ = A⁻ᵀ D₁⁻¹ D₂ Aᵀ  (simultaneous diagonalisation)
-    # The eigenvectors of Σ₁⁻¹ Σ₂ give Aᵀ (up to scale/sign)
+    # SVD of S0⁻¹ S1 — matches MATLAB: X = S0\S1; [~,S,V] = svd(X); Omega = V;
+    X = S0 \ S1
+    F_svd = svd(X)
+    S_diag = Diagonal(F_svd.S)
+    Omega = F_svd.V
 
-    M = Sigma1 \ Sigma2
-    eig = eigen(M)
-    Ainv_T = real.(eig.vectors)  # columns are eigenvectors = rows of A⁻¹
-
-    # Recover A: each column of A is a structural impact vector
-    # Normalise so that A * A' matches Σ₁ in scale
-    A = inv(Ainv_T')
-
-    # Scale columns of A so that A * diag(d1) * A' ≈ Σ₁
-    # d_j = (a_j' Σ₁⁻¹ a_j)⁻¹  where a_j is column j of A
-    iS1 = inv(Sigma1)
-    for j in 1:K
-        s = sqrt(abs(A[:, j]' * iS1 * A[:, j]))
-        if s > 0
-            A[:, j] ./= s
-        end
-    end
-
-    # Sign normalisation: positive diagonal
-    for j in 1:K
-        if A[j, j] < 0
-            A[:, j] .*= -1
-        end
-    end
-
-    # Compute IRFs using companion form
-    Kp = K * p
-    F = companion_form(Phi, K, p)
-    G = zeros(Kp, K); G[1:K, :] = I(K)
-
-    ir = zeros(K, hor, K)
-    Fk = Matrix{Float64}(I, Kp, Kp)
-    for k in 1:hor
-        PHI = Fk * G * A
-        ir[:, k, :] = G' * PHI
-        Fk = F * Fk
-    end
-    return ir, A
+    # Compute IRFs: pass singular‑value diagonal as "Sigma" and V as rotation
+    ir = compute_irf(Phi, S_diag, hor; Omega=Omega)
+    return ir, Omega
 end
 
 """

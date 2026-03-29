@@ -50,7 +50,7 @@ function compute_connectedness(Phi::AbstractMatrix, Sigma::AbstractMatrix,
             end
             theta[ss, j] = NN / DD[ss, ss]
             if pesaran_shin
-                theta[ss, j] *= Sigma[j, j]^(-1)
+                theta[ss, j] *= Sigma[j, j]^(-1/2)
             end
         end
     end

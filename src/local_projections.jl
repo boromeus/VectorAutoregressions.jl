@@ -54,6 +54,10 @@ function lp_irf(y::AbstractMatrix, p::Union{Int,Vector{Int}}, H::Int;
     std_out = zeros(H + 1, K^2)
     Omega = Matrix{Float64}(I, K, K)  # Impact matrix, set at hh=0
 
+    # Store each horizon's OLS coefficients (MATLAB uses previous horizon's β)
+    stored_beta = Vector{Matrix{Float64}}(undef, H + 1)
+    stored_se   = Vector{Matrix{Float64}}(undef, H + 1)
+
     for hh in 0:H
         ph = hh == 0 ? pmax : pvec[hh]
 
@@ -79,13 +83,20 @@ function lp_irf(y::AbstractMatrix, p::Union{Int,Vector{Int}}, H::Int;
             beta, se_beta = _tsls_estimate(ytmp, X_endo, X_exo, Z,
                                             robust_se, max(ph + hh + 1, 1))
 
+            # Store this horizon's coefficients
+            stored_beta[hh + 1] = beta
+            stored_se[hh + 1] = se_beta
+
             if hh == 0
                 resid = ytmp - hcat(X_endo, Xr[:, exo_cols]) * beta
                 Sigma_u = (resid' * resid) / Teff
                 Omega = cholesky(Hermitian(Sigma_u)).L * Q
                 irf_out[1, :] = vec(Omega')
             else
-                Phi_h = beta[1:K*ph, :]
+                # Use previous horizon's β (MATLAB convention)
+                prev_beta = stored_beta[hh]
+                prev_ph = hh == 1 ? pmax : pvec[hh - 1]
+                Phi_h = prev_beta[1:K*prev_ph, :]
                 ir = compute_irf(Phi_h, Matrix{Float64}(I, K, K), 2; Omega=Omega)
                 irf_out[hh + 1, :] = vec(ir[:, 2, :]')
             end
@@ -93,10 +104,13 @@ function lp_irf(y::AbstractMatrix, p::Union{Int,Vector{Int}}, H::Int;
             if hh == 0
                 std_out[1, :] .= 0.0
             else
-                se_Phi = se_beta[1:K*ph, :]
-                ir_up = compute_irf(beta[1:K*ph, :] .+ talpha .* se_Phi,
+                prev_beta = stored_beta[hh]
+                prev_se = stored_se[hh]
+                prev_ph = hh == 1 ? pmax : pvec[hh - 1]
+                se_Phi = prev_se[1:K*prev_ph, :]
+                ir_up = compute_irf(prev_beta[1:K*prev_ph, :] .+ talpha .* se_Phi,
                                     Matrix{Float64}(I, K, K), 2; Omega=Omega)
-                ir_lo = compute_irf(beta[1:K*ph, :] .- talpha .* se_Phi,
+                ir_lo = compute_irf(prev_beta[1:K*prev_ph, :] .- talpha .* se_Phi,
                                     Matrix{Float64}(I, K, K), 2; Omega=Omega)
                 std_out[hh + 1, :] = abs.(vec(ir_up[:, 2, :]') .-
                                           irf_out[hh + 1, :]) ./ talpha
@@ -106,6 +120,17 @@ function lp_irf(y::AbstractMatrix, p::Union{Int,Vector{Int}}, H::Int;
             # OLS
             beta = Xr \ ytmp
             resid = ytmp - Xr * beta
+
+            # SE via Newey-West
+            if robust_se
+                se_beta = _newey_west_se(ytmp, Xr, beta, max(ph + hh + 1, 1))
+            else
+                se_beta = _ols_se(ytmp, Xr, beta)
+            end
+
+            # Store this horizon's coefficients
+            stored_beta[hh + 1] = beta
+            stored_se[hh + 1] = se_beta
 
             if hh == 0
                 # Impact: get Σ_u and Cholesky
@@ -118,26 +143,26 @@ function lp_irf(y::AbstractMatrix, p::Union{Int,Vector{Int}}, H::Int;
                 irf_out[1, :] = vec(Omega')
             else
                 # hh > 0: LP-IRF via one-step ahead propagation
-                Phi_h = beta[1:K*ph, :]
+                # MATLAB convention: use previous horizon's β for iresponse
+                prev_beta = stored_beta[hh]  # β from horizon hh-1
+                prev_ph = hh == 1 ? pmax : pvec[hh - 1]
+                Phi_h = prev_beta[1:K*prev_ph, :]
                 ir = compute_irf(Phi_h, Matrix{Float64}(I, K, K), 2; Omega=Omega)
                 irf_out[hh + 1, :] = vec(ir[:, 2, :]')
-            end
-
-            # SE via Newey-West
-            if robust_se
-                se_beta = _newey_west_se(ytmp, Xr, beta, max(ph + hh + 1, 1))
-            else
-                se_beta = _ols_se(ytmp, Xr, beta)
             end
 
             if hh == 0
                 # SE on impact comes from Omega uncertainty
                 std_out[1, :] = vec(Omega') .* 0  # impact is exact given Omega
             else
-                se_Phi = se_beta[1:K*ph, :]
-                ir_up = compute_irf(beta[1:K*ph, :] .+ talpha .* se_Phi,
+                # SE bands: use previous horizon's β ± t_α × se
+                prev_beta = stored_beta[hh]
+                prev_se = stored_se[hh]
+                prev_ph = hh == 1 ? pmax : pvec[hh - 1]
+                se_Phi = prev_se[1:K*prev_ph, :]
+                ir_up = compute_irf(prev_beta[1:K*prev_ph, :] .+ talpha .* se_Phi,
                                     Matrix{Float64}(I, K, K), 2; Omega=Omega)
-                ir_lo = compute_irf(beta[1:K*ph, :] .- talpha .* se_Phi,
+                ir_lo = compute_irf(prev_beta[1:K*prev_ph, :] .- talpha .* se_Phi,
                                     Matrix{Float64}(I, K, K), 2; Omega=Omega)
                 upper_point = vec(ir_up[:, 2, :]')
                 lower_point = vec(ir_lo[:, 2, :]')

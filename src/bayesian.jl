@@ -82,7 +82,7 @@ function bvar(y::AbstractMatrix{<:Real}, p::Int;
     XXi_lower_chol = cholesky(Hermitian(posterior.XXi)).L
 
     # ── Pre‑allocate storage ──
-    Phi_draws   = zeros(nk, ny, K)
+    Phi_draws   = zeros(nk + nexo, ny, K)
     Sigma_draws = zeros(ny, ny, K)
     ir_draws    = zeros(ny, hor, ny, K)
     irlr_draws  = zeros(ny, hor, ny, K)
@@ -95,6 +95,10 @@ function bvar(y::AbstractMatrix{<:Real}, p::Int;
     # Actual‑data regressors for residuals
     YY = var_ols.Y
     XX = var_ols.X
+    # Separate endogenous/deterministic columns from exogenous columns
+    XX_endo = XX[:, 1:nk]
+    XX_exo  = nexo > 0 ? XX[:, nk+1:end] : nothing
+    Gamma_ols = nexo > 0 ? var_ols.Phi[nk+1:end, :] : nothing
     e_draws = zeros(size(YY, 1), ny, K)
     Omega_draws = zeros(ny, ny, K)
 
@@ -155,9 +159,15 @@ function bvar(y::AbstractMatrix{<:Real}, p::Int;
         end
 
         # Store draws
-        Phi_draws[:, :, d] = Phi
+        Phi_draws[1:nk, :, d] = Phi
+        if nexo > 0
+            Phi_draws[nk+1:end, :, d] = Gamma_ols
+        end
         Sigma_draws[:, :, d] = Sigma
-        e_draws[:, :, d] = YY - XX * Phi
+        e_draws[:, :, d] = YY - XX_endo * Phi
+        if XX_exo !== nothing
+            e_draws[:, :, d] .-= XX_exo * Gamma_ols
+        end
 
         # ── Compute IRFs ──
         # Cholesky (always)

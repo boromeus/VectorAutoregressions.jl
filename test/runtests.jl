@@ -547,3 +547,6 @@ end  # top-level testset
 include("test_identification.jl")
 include("test_irf.jl")
 include("test_bvar_identification.jl")
+include("test_histdecomp.jl")
+include("test_connectedness.jl")
+include("test_local_projections.jl")

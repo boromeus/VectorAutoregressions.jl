@@ -139,6 +139,32 @@ include("test_helpers.jl")
         @test any(isfinite, result.irheterosked_draws)
     end
 
+    # ─── Heteroskedasticity SVD properties ──────────────────────────────
+    @testset "compute_irf_heterosked — SVD properties" begin
+        rng_svd = Random.MersenneTwister(42)
+        K_het = 2
+        T_het = 400
+        Phi_true = [0.5 0.1; 0.0 0.4]
+        y_het = zeros(T_het + 100, K_het)
+        for t in 2:(T_het + 100)
+            scale = t <= (T_het + 100) ÷ 2 ? 1.0 : 3.0
+            y_het[t, :] = Phi_true' * y_het[t-1, :] + scale * randn(rng_svd, K_het)
+        end
+        y_het = y_het[101:end, :]
+
+        v = var_estimate(y_het, 1; constant=true)
+        T_eff = v.nobs
+        regimes = vcat(fill(1, T_eff ÷ 2), fill(2, T_eff - T_eff ÷ 2))
+
+        ir, Omega = compute_irf_heterosked(v.Phi, v.residuals, regimes, 8, 1)
+        @test size(ir) == (K_het, 8, K_het)
+        @test size(Omega) == (K_het, K_het)
+        # Omega = V from SVD should be orthonormal
+        @test Omega' * Omega ≈ I(K_het) atol = 1e-10
+        # IRFs should be finite
+        @test all(isfinite, ir)
+    end
+
     # ─── Minnesota prior with identification ────────────────────────────
     @testset "bvar Minnesota + SignRestriction" begin
         sr = SignRestriction(restrictions=["y(1,1,1)>0"],
