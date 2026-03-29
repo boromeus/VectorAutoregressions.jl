@@ -6,7 +6,7 @@ using RecipesBase
 
 # ─── IRF plot recipe ────────────────────────────────────────────────────────────
 
-@recipe function f(r::IRFResult; varnames=nothing, shocknames=nothing)
+@recipe function f(r::IRFResult; varnames = nothing, shocknames = nothing)
     K = size(r.irf, 1)
     hor = r.horizon
 
@@ -54,7 +54,7 @@ end
 
 # ─── FEVD plot recipe ──────────────────────────────────────────────────────────
 
-@recipe function f(r::FEVDPosteriorResult; varnames=nothing)
+@recipe function f(r::FEVDPosteriorResult; varnames = nothing)
     K = size(r.median, 1)
     nhorizons = size(r.median, 3)
 
@@ -74,7 +74,7 @@ end
 
 # ─── Forecast plot recipe ──────────────────────────────────────────────────────
 
-@recipe function f(r::ForecastResult; varnames=nothing, history=nothing)
+@recipe function f(r::ForecastResult; varnames = nothing, history = nothing)
     K = size(r.point_no_shocks, 2)
     fhor = size(r.point_no_shocks, 1)
 
@@ -105,7 +105,7 @@ end
 
 # ─── Historical decomposition plot recipe ───────────────────────────────────────
 
-@recipe function f(r::HistDecompResult; varnames=nothing, shocknames=nothing)
+@recipe function f(r::HistDecompResult; varnames = nothing, shocknames = nothing)
     T = size(r.decomposition, 1)
     K_var = size(r.decomposition, 2)
     K_shock = size(r.decomposition, 3)
@@ -119,7 +119,8 @@ end
             @series begin
                 subplot := var
                 title := varnames !== nothing ? varnames[var] : "Var $var"
-                label := shocknames !== nothing && shock <= length(shocknames) ? shocknames[shock] : "Shock $shock"
+                label := shocknames !== nothing && shock <= length(shocknames) ?
+                         shocknames[shock] : "Shock $shock"
                 1:T, r.decomposition[:, var, shock]
             end
         end

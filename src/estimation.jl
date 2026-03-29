@@ -18,22 +18,23 @@ Estimate a reduced‑form VAR(p) by OLS.
 A `VAREstimate` struct.
 """
 function var_estimate(y::AbstractMatrix{<:Real}, p::Int;
-                      constant::Bool=true, trend::Bool=false,
-                      exogenous::Union{Nothing,AbstractMatrix{<:Real}}=nothing)
+        constant::Bool = true, trend::Bool = false,
+        exogenous::Union{Nothing, AbstractMatrix{<:Real}} = nothing)
     p > 0 || throw(ArgumentError("lag order p must be positive"))
     T, K = size(y)
     T > K || throw(ArgumentError("more variables than observations"))
 
     # Build regressor matrix: [y_{t-1} … y_{t-p}  constant  trend  exogenous]
-    Y = y[p+1:T, :]
+    Y = y[(p + 1):T, :]
     Teff = T - p
-    X = lagmatrix(y, p; constant=constant, trend=trend)
+    X = lagmatrix(y, p; constant = constant, trend = trend)
 
     nexo = 0
     if exogenous !== nothing
         nexo = size(exogenous, 2)
-        size(exogenous, 1) >= T || throw(ArgumentError("exogenous must have at least T rows"))
-        X = hcat(X, exogenous[p+1:T, :])
+        size(exogenous, 1) >= T ||
+            throw(ArgumentError("exogenous must have at least T rows"))
+        X = hcat(X, exogenous[(p + 1):T, :])
     end
 
     # OLS via SVD
@@ -44,7 +45,7 @@ function var_estimate(y::AbstractMatrix{<:Real}, p::Int;
     Sigma = residuals' * residuals / (Teff - nk)
 
     return VAREstimate(Float64.(y), Y, X, Phi, Sigma, residuals, xxi,
-                       Teff, K, p, constant, trend, nexo)
+        Teff, K, p, constant, trend, nexo)
 end
 
 """
@@ -60,15 +61,15 @@ Select optimal VAR lag length by information criterion.
 # Returns
 Optimal lag order (Int).
 """
-function var_lagorder(y::AbstractMatrix{<:Real}, pbar::Int; ic::String="bic", verbose::Bool=true)
+function var_lagorder(y::AbstractMatrix{<:Real}, pbar::Int; ic::String = "bic", verbose::Bool = true)
     T, K = size(y)
     t = T - pbar
     IC_vals = zeros(pbar)
-    Y = y[pbar+1:T, :]
+    Y = y[(pbar + 1):T, :]
     for p in 1:pbar
         X = ones(t, 1)
         for i in 1:p
-            X = hcat(X, y[pbar+1-i:T-i, :])
+            X = hcat(X, y[(pbar + 1 - i):(T - i), :])
         end
         β = X \ Y
         u = Y - X * β
@@ -105,8 +106,8 @@ function information_criteria(v::VAREstimate)
     iS = pinv(S)
     llf = -(T * K / 2) * (1 + log(2π)) - T / 2 * log(det(S)) -
           0.5 * tr(iS * E' * E)
-    aic  = -2 * llf / T + 2 * nk / T
-    bic  = -2 * llf / T + nk * log(T) / T
+    aic = -2 * llf / T + 2 * nk / T
+    bic = -2 * llf / T + nk * log(T) / T
     hqic = -2 * llf / T + 2 * nk * log(log(T)) / T
     return InfoCriteria(aic, bic, hqic)
 end
@@ -120,32 +121,32 @@ and co‑persistence (port of Sims's rfvar3.m).
 Returns `(B, u, xxi, y_out, X_out)`.
 """
 function rfvar3(ydata::AbstractMatrix, lags::Int, xdata::AbstractMatrix,
-                breaks::Vector{Int}, lambda::Float64, mu::Float64)
+        breaks::Vector{Int}, lambda::Float64, mu::Float64)
     T, nvar = size(ydata)
     nx = size(xdata, 2)
 
     # Build sample indices respecting breaks
     all_breaks = vcat(0, breaks, T)
     smpl = Int[]
-    for nb in 1:(length(all_breaks)-1)
-        append!(smpl, (all_breaks[nb]+lags+1):all_breaks[nb+1])
+    for nb in 1:(length(all_breaks) - 1)
+        append!(smpl, (all_breaks[nb] + lags + 1):all_breaks[nb + 1])
     end
     Tsmpl = length(smpl)
 
     # Build X = [y_{t-1} … y_{t-p}  xdata_t]
-    X = Matrix{Float64}(undef, Tsmpl, nvar * lags + nx)
+    X = zeros(Tsmpl, nvar * lags + nx)
     for (idx, t) in enumerate(smpl)
         for lag in 1:lags
-            X[idx, (lag-1)*nvar+1:lag*nvar] = ydata[t-lag, :]
+            X[idx, ((lag - 1) * nvar + 1):(lag * nvar)] = ydata[t - lag, :]
         end
-        X[idx, nvar*lags+1:end] = xdata[t, :]
+        X[idx, (nvar * lags + 1):end] = xdata[t, :]
     end
     y = ydata[smpl, :]
 
     # Persistence dummies
     if lambda != 0 || mu > 0
-        ybar = mean(ydata[1:lags, :], dims=1)
-        xbar = nx > 0 ? mean(xdata[1:lags, :], dims=1) : zeros(1, 0)
+        ybar = mean(ydata[1:lags, :], dims = 1)
+        xbar = nx > 0 ? mean(xdata[1:lags, :], dims = 1) : zeros(1, 0)
         if lambda != 0
             abslam = abs(lambda)
             if lambda > 0

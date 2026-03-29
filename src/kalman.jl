@@ -16,15 +16,15 @@ Handles missing data (NaN) automatically.
 Named tuple `(logL, states, smoothed, yforecast)`.
 """
 function kalman_filter(Phi::AbstractMatrix, Sigma::AbstractMatrix,
-                       y::AbstractMatrix;
-                       initial_cond::Symbol=:diffuse,
-                       index::Union{Nothing,Vector{Int}}=nothing,
-                       start::Int=1)
+        y::AbstractMatrix;
+        initial_cond::Symbol = :diffuse,
+        index::Union{Nothing, Vector{Int}} = nothing,
+        start::Int = 1)
     T, ny = size(y)
     data = y'
 
     # State-space form: x(t) = A x(t-1) + B u(t);  y(t) = C x(t) + const
-    A, B, C, const_vec = _var2ss(Phi, Sigma, ny; index=index)
+    A, B, C, const_vec = _var2ss(Phi, Sigma, ny; index = index)
     ns = size(A, 1)
 
     # Pre-allocate
@@ -67,8 +67,8 @@ function kalman_filter(Phi::AbstractMatrix, Sigma::AbstractMatrix,
 
         if isempty(obs_idx)
             # All missing
-            stt[:, t+1] = state_prior
-            ptt[:, :, t+1] = P_prior
+            stt[:, t + 1] = state_prior
+            ptt[:, :, t + 1] = P_prior
             continue
         end
 
@@ -86,8 +86,8 @@ function kalman_filter(Phi::AbstractMatrix, Sigma::AbstractMatrix,
         KG = P_prior * Ct' * Finv
 
         # Update
-        stt[:, t+1] = state_prior + KG * v
-        ptt[:, :, t+1] = P_prior - KG * Ct * P_prior
+        stt[:, t + 1] = state_prior + KG * v
+        ptt[:, :, t + 1] = P_prior - KG * Ct * P_prior
 
         # Log-likelihood contribution
         nd = length(obs_idx)
@@ -99,10 +99,10 @@ function kalman_filter(Phi::AbstractMatrix, Sigma::AbstractMatrix,
     # RTS smoother
     smoothed = _rts_smoother(stt, ptt, A, T, ns)
 
-    return (logL=logL,
-            states=stt[:, 2:end]',
-            smoothed=smoothed',
-            yforecast=yfor')
+    return (logL = logL,
+        states = stt[:, 2:end]',
+        smoothed = smoothed',
+        yforecast = yfor')
 end
 
 # ─── Internal helpers ───────────────────────────────────────────────────────────
@@ -111,10 +111,10 @@ end
 Build the VAR state-space representation matching MATLAB var2ss.m.
 """
 function _var2ss(Phi::AbstractMatrix, Sigma::AbstractMatrix, ny::Int;
-                 index::Union{Nothing,Vector{Int}}=nothing)
+        index::Union{Nothing, Vector{Int}} = nothing)
     m, K = size(Phi)
     if K != ny
-        error("Dimension mismatch between Phi and ny")
+        throw(DimensionMismatch("Phi has $K columns but ny=$ny"))
     end
     lags = if rem(m, ny) == 0
         m ÷ ny
@@ -126,9 +126,9 @@ function _var2ss(Phi::AbstractMatrix, Sigma::AbstractMatrix, ny::Int;
 
     # Transition: A (ns × ns)
     A = zeros(ns, ns)
-    A[1:ny, :] = Phi[1:ny*lags, :]'
+    A[1:ny, :] = Phi[1:(ny * lags), :]'
     if lags > 1
-        A[ny+1:ns, 1:ny*(lags-1)] = I(ny * (lags - 1))
+        A[(ny + 1):ns, 1:(ny * (lags - 1))] = I(ny * (lags - 1))
     end
 
     # Shock loading: B (ns × ny)
@@ -151,7 +151,7 @@ function _var2ss(Phi::AbstractMatrix, Sigma::AbstractMatrix, ny::Int;
     # Constant (intercept in state, if present)
     const_vec = zeros(ns)
     if m > ny * lags
-        const_vec[1:ny] = Phi[ny*lags+1, :]
+        const_vec[1:ny] = Phi[ny * lags + 1, :]
     end
 
     return A, B, C, const_vec
@@ -161,7 +161,7 @@ end
 Solve Lyapunov equation P = A P A' + Q iteratively.
 """
 function _solve_lyapunov(A::AbstractMatrix, Q::AbstractMatrix;
-                         maxiter::Int=1000, tol::Float64=1e-12)
+        maxiter::Int = 1000, tol::Float64 = 1e-12)
     n = size(A, 1)
     P = Matrix{Float64}(I, n, n) * 10.0
     for _ in 1:maxiter
@@ -185,8 +185,8 @@ function _rts_smoother(stt, ptt, A, T, ns)
     for t in T:-1:1
         P_pred = A * ptt[:, :, t] * A' + I(ns) * 1e-10  # regularize
         J = ptt[:, :, t] * A' / Hermitian(P_pred)
-        s_smooth[:, t] = stt[:, t] + J * (s_smooth[:, t+1] - A * stt[:, t])
-        P_smooth[:, :, t] = ptt[:, :, t] + J * (P_smooth[:, :, t+1] - P_pred) * J'
+        s_smooth[:, t] = stt[:, t] + J * (s_smooth[:, t + 1] - A * stt[:, t])
+        P_smooth[:, :, t] = ptt[:, :, t] + J * (P_smooth[:, :, t + 1] - P_pred) * J'
     end
 
     return s_smooth[:, 1:T]

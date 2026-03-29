@@ -25,30 +25,34 @@ Estimate a Bayesian VAR(p) and compute posterior draws.
 A `BVARResult` struct.
 """
 function bvar(y::AbstractMatrix{<:Real}, p::Int;
-              prior::AbstractPrior=FlatPrior(),
-              identification::AbstractIdentification=CholeskyIdentification(),
-              K::Int=5000, hor::Int=24, fhor::Int=12,
-              constant::Bool=true, trend::Bool=false,
-              non_explosive::Bool=false,
-              exogenous::Union{Nothing,AbstractMatrix{<:Real}}=nothing,
-              verbose::Bool=true,
-              rng::AbstractRNG=Random.default_rng())
-
+        prior::AbstractPrior = FlatPrior(),
+        identification::AbstractIdentification = CholeskyIdentification(),
+        K::Int = 5000, hor::Int = 24, fhor::Int = 12,
+        constant::Bool = true, trend::Bool = false,
+        non_explosive::Bool = false,
+        exogenous::Union{Nothing, AbstractMatrix{<:Real}} = nothing,
+        verbose::Bool = true,
+        rng::AbstractRNG = Random.default_rng())
     p > 0 || throw(ArgumentError("lag order p must be positive"))
     T_raw, ny = size(y)
 
     nexo = exogenous !== nothing ? size(exogenous, 2) : 0
 
     # ── Compute OLS estimate and prior/posterior moments ──
-    prior_info, posterior, B_ols, u_ols, xxi_ols, y_ols, X_ols =
-        compute_prior_posterior(y, p, prior; constant=constant, trend=trend, nexogenous=nexo)
+    prior_info, posterior,
+    B_ols,
+    u_ols,
+    xxi_ols,
+    y_ols,
+    X_ols = compute_prior_posterior(
+        y, p, prior; constant = constant, trend = trend, nexogenous = nexo)
 
     nobs = size(y_ols, 1) - p  # effective obs for the VAR part
     nk = size(X_ols, 2)
     nx = (constant ? 1 : 0) + (trend ? 1 : 0) + nexo
 
     # Build the actual‑data‑only OLS estimate for output
-    var_ols = var_estimate(y, p; constant=constant, trend=trend, exogenous=exogenous)
+    var_ols = var_estimate(y, p; constant = constant, trend = trend, exogenous = exogenous)
 
     # ── Information criteria on OLS ──
     ic = information_criteria(var_ols)
@@ -82,10 +86,10 @@ function bvar(y::AbstractMatrix{<:Real}, p::Int;
     XXi_lower_chol = cholesky(Hermitian(posterior.XXi)).L
 
     # ── Pre‑allocate storage ──
-    Phi_draws   = zeros(nk, ny, K)
+    Phi_draws = zeros(nk, ny, K)
     Sigma_draws = zeros(ny, ny, K)
-    ir_draws    = zeros(ny, hor, ny, K)
-    irlr_draws  = zeros(ny, hor, ny, K)
+    ir_draws = zeros(ny, hor, ny, K)
+    irlr_draws = zeros(ny, hor, ny, K)
     irsign_draws = zeros(ny, hor, ny, K)
     irnarrsign_draws = zeros(ny, hor, ny, K)
     irzerosign_draws = zeros(ny, hor, ny, K)
@@ -98,22 +102,22 @@ function bvar(y::AbstractMatrix{<:Real}, p::Int;
     Omega_draws = zeros(ny, ny, K)
 
     # Forecasts
-    yhatfut_no    = fill(NaN, fhor, ny, K)
-    yhatfut_with  = fill(NaN, fhor, ny, K)
-    yhatfut_cond  = fill(NaN, fhor, ny, K)
+    yhatfut_no = fill(NaN, fhor, ny, K)
+    yhatfut_with = fill(NaN, fhor, ny, K)
+    yhatfut_cond = fill(NaN, fhor, ny, K)
 
     # Forecast initial values
-    forecast_initval = y[end-p+1:end, :]
+    forecast_initval = y[(end - p + 1):end, :]
     forecast_xdata = ones(fhor, constant ? 1 : 0)
     if trend
         T_eff = size(YY, 1)
-        forecast_xdata = hcat(forecast_xdata, collect(T_eff+1:T_eff+fhor))
+        forecast_xdata = hcat(forecast_xdata, collect((T_eff + 1):(T_eff + fhor)))
     end
 
     # Companion matrix template
     Companion = zeros(ny * p, ny * p)
     if p > 1
-        Companion[ny+1:end, 1:ny*(p-1)] = I(ny*(p-1))
+        Companion[(ny + 1):end, 1:(ny * (p - 1))] = I(ny*(p-1))
     end
 
     dd = 0
@@ -132,7 +136,7 @@ function bvar(y::AbstractMatrix{<:Real}, p::Int;
                 break
             end
             # Step 1: Draw Σ ~ IW
-            Sigma = rand_inverse_wishart(posterior.df, posterior.S; rng=rng)
+            Sigma = rand_inverse_wishart(posterior.df, posterior.S; rng = rng)
             Sigma_chol = cholesky(Hermitian(Sigma)).L
 
             # Step 2: Draw Φ | Σ ~ MN
@@ -143,7 +147,7 @@ function bvar(y::AbstractMatrix{<:Real}, p::Int;
 
             # Step 3: Check stability
             if non_explosive
-                Companion[1:ny, :] = Phi[1:ny*p, :]'
+                Companion[1:ny, :] = Phi[1:(ny * p), :]'
                 maxeig = maximum(abs.(eigvals(Companion)))
                 if maxeig > 1.01
                     rejected += 1
@@ -160,67 +164,71 @@ function bvar(y::AbstractMatrix{<:Real}, p::Int;
 
         # ── Compute IRFs ──
         # Cholesky (always)
-        ir_draws[:, :, :, d] = compute_irf(Phi[1:ny*p, :], Sigma, hor)
+        ir_draws[:, :, :, d] = compute_irf(Phi[1:(ny * p), :], Sigma, hor)
 
         # Long‑run
         if identification isa LongRunIdentification
-            irlr, Qlr = compute_irf_longrun(Phi[1:ny*p, :], Sigma, hor, p)
+            irlr, Qlr = compute_irf_longrun(Phi[1:(ny * p), :], Sigma, hor, p)
             irlr_draws[:, :, :, d] = irlr
             Omega_draws[:, :, d] = Qlr
         end
 
         # Sign restrictions
         if identification isa SignRestriction
-            irsign, Omega = irf_sign_restriction(Phi[1:ny*p, :], Sigma, hor,
-                                                  identification.restrictions;
-                                                  max_rotations=identification.max_rotations, rng=rng)
+            irsign,
+            Omega = irf_sign_restriction(Phi[1:(ny * p), :], Sigma, hor,
+                identification.restrictions;
+                max_rotations = identification.max_rotations, rng = rng)
             irsign_draws[:, :, :, d] = irsign
             Omega_draws[:, :, d] = Omega
         end
 
         # Narrative + sign
         if identification isa NarrativeSignRestriction
-            irns, Omega = irf_narrative_sign(e_draws[:, :, d],
-                              Phi[1:ny*p, :], Sigma, hor,
-                              identification.signs, identification.narrative;
-                              max_rotations=identification.max_rotations, rng=rng)
+            irns,
+            Omega = irf_narrative_sign(e_draws[:, :, d],
+                Phi[1:(ny * p), :], Sigma, hor,
+                identification.signs, identification.narrative;
+                max_rotations = identification.max_rotations, rng = rng)
             irnarrsign_draws[:, :, :, d] = irns
             Omega_draws[:, :, d] = Omega
         end
 
         # Zero + sign
         if identification isa ZeroSignRestriction
-            irzs, Omega = irf_zero_sign(Phi, Sigma, hor, p,
-                              identification.restrictions;
-                              var_pos=identification.var_pos, rng=rng)
+            irzs,
+            Omega = irf_zero_sign(Phi, Sigma, hor, p,
+                identification.restrictions;
+                var_pos = identification.var_pos, rng = rng)
             irzerosign_draws[:, :, :, d] = irzs
             Omega_draws[:, :, d] = Omega
         end
 
         # Proxy
         if identification isa ProxyIdentification
-            irs_p, b1, _ = compute_irf_proxy(Phi, Sigma, e_draws[:, :, d],
-                                              identification.instrument, hor, p;
-                                              proxy_end=identification.proxy_end)
+            irs_p, b1,
+            _ = compute_irf_proxy(Phi, Sigma, e_draws[:, :, d],
+                identification.instrument, hor, p;
+                proxy_end = identification.proxy_end)
             irproxy_draws[:, 1:size(irs_p, 1), 1, d] = irs_p'
         end
 
         # ── Forecasts ──
         lags_data = copy(forecast_initval)
         for t in 1:fhor
-            x_fwd = vcat(vec(reverse(lags_data, dims=1)'), forecast_xdata[t, :])
+            x_fwd = vcat(vec(reverse(lags_data, dims = 1)'), forecast_xdata[t, :])
             y_pred = x_fwd' * Phi
-            lags_data[1:end-1, :] = lags_data[2:end, :]
+            lags_data[1:(end - 1), :] = lags_data[2:end, :]
             lags_data[end, :] = y_pred
             yhatfut_no[t, :, d] = y_pred
         end
 
         lags_data = copy(forecast_initval)
         for t in 1:fhor
-            x_fwd = vcat(vec(reverse(lags_data, dims=1)'), forecast_xdata[t, :])
+            x_fwd = vcat(vec(reverse(lags_data, dims = 1)'), forecast_xdata[t, :])
             shock = (cholesky(Hermitian(Sigma)).L * randn(rng, ny))'
             y_pred = x_fwd' * Phi + shock
-            lags_data[1:end-1, :] = lags_data[2:end, :]
+            lags_data[1:(end - 1), :] = lags_data[2:end, :]
             lags_data[end, :] = y_pred
             yhatfut_with[t, :, d] = y_pred
         end
@@ -249,15 +257,15 @@ end
 Classical VAR with bootstrap confidence intervals.
 """
 function classical_var(y::AbstractMatrix{<:Real}, p::Int;
-                       nboot::Int=1000, identification::AbstractIdentification=CholeskyIdentification(),
-                       hor::Int=24, constant::Bool=true,
-                       rng::AbstractRNG=Random.default_rng())
-    v = var_estimate(y, p; constant=constant)
+        nboot::Int = 1000, identification::AbstractIdentification = CholeskyIdentification(),
+        hor::Int = 24, constant::Bool = true,
+        rng::AbstractRNG = Random.default_rng())
+    v = var_estimate(y, p; constant = constant)
     K = v.nvar
     T = v.nobs
 
     # Point estimate IRF
-    ir_point = compute_irf(v.Phi[1:K*p, :], v.Sigma, hor)
+    ir_point = compute_irf(v.Phi[1:(K * p), :], v.Sigma, hor)
 
     # Bootstrap
     ir_boot = zeros(K, hor, K, nboot)
@@ -269,21 +277,21 @@ function classical_var(y::AbstractMatrix{<:Real}, p::Int;
         # Build bootstrap sample
         y_boot = zeros(T + p, K)
         start_idx = rand(rng, 1:T)
-        y_boot[1:p, :] = v.Y[start_idx:min(start_idx+p-1, T), :]
+        y_boot[1:p, :] = v.Y[start_idx:min(start_idx + p - 1, T), :]
         if start_idx + p - 1 > T
-            y_boot[1:p, :] = v.Y[end-p+1:end, :]
+            y_boot[1:p, :] = v.Y[(end - p + 1):end, :]
         end
 
-        for t in p+1:T+p
-            x_t = vec(y_boot[t-1:-1:t-p, :]')
+        for t in (p + 1):(T + p)
+            x_t = vec(y_boot[(t - 1):-1:(t - p), :]')
             if constant
                 x_t = vcat(x_t, 1.0)
             end
-            y_boot[t, :] = x_t' * v.Phi + u_boot[t-p, :]'
+            y_boot[t, :] = x_t' * v.Phi + u_boot[t - p, :]'
         end
 
-        v_boot = var_estimate(y_boot, p; constant=constant)
-        ir_boot[:, :, :, b] = compute_irf(v_boot.Phi[1:K*p, :], v_boot.Sigma, hor)
+        v_boot = var_estimate(y_boot, p; constant = constant)
+        ir_boot[:, :, :, b] = compute_irf(v_boot.Phi[1:(K * p), :], v_boot.Sigma, hor)
     end
 
     return ir_point, ir_boot, v

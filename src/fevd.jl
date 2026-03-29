@@ -11,7 +11,7 @@ Returns K × K matrix: `FEVD[i,j]` = percentage of variable `i`'s forecast
 error variance explained by shock `j`.
 """
 function compute_fevd(Phi::AbstractMatrix, Sigma::AbstractMatrix, hor::Int;
-                      Omega::AbstractMatrix=Matrix{Float64}(I, size(Sigma, 1), size(Sigma, 1)))
+        Omega::AbstractMatrix = Matrix{Float64}(I, size(Sigma, 1), size(Sigma, 1)))
     K = size(Sigma, 1)
     p = size(Phi, 1) ÷ K
     if size(Phi, 1) % K != 0
@@ -24,9 +24,10 @@ function compute_fevd(Phi::AbstractMatrix, Sigma::AbstractMatrix, hor::Int;
     ar_rows = min(Kp, size(Phi, 1))
     F[1:K, 1:ar_rows] = Phi[1:ar_rows, :]'
     if p > 1
-        F[K+1:Kp, 1:K*(p-1)] = I(K*(p-1))
+        F[(K + 1):Kp, 1:(K * (p - 1))] = I(K*(p-1))
     end
-    G = zeros(Kp, K); G[1:K, :] = I(K)
+    G = zeros(Kp, K);
+    G[1:K, :] = I(K)
 
     A = cholesky(Hermitian(Sigma)).L
     Kappa = G * A * Omega
@@ -43,7 +44,8 @@ function compute_fevd(Phi::AbstractMatrix, Sigma::AbstractMatrix, hor::Int;
     # Per-shock variance
     var_by_shock = zeros(K, K)
     for s in 1:K
-        Ind = zeros(K, K); Ind[s, s] = 1.0
+        Ind = zeros(K, K);
+        Ind[s, s] = 1.0
         tmp_s = zeros(Kp, Kp)
         Fh = Matrix{Float64}(I, Kp, Kp)
         for h in 1:hor
@@ -54,7 +56,7 @@ function compute_fevd(Phi::AbstractMatrix, Sigma::AbstractMatrix, hor::Int;
     end
 
     # Sanity check
-    discrepancy = maximum(abs.(sum(var_by_shock, dims=2) .- all_var))
+    discrepancy = maximum(abs.(sum(var_by_shock, dims = 2) .- all_var))
     if discrepancy > 1e-8
         @warn "FEVD consistency check failed: max discrepancy = $discrepancy"
     end
@@ -72,8 +74,8 @@ end
 Compute FEVD with posterior credible bands.
 """
 function fevd_posterior(result::BVARResult;
-                       conf_level::Float64=0.68,
-                       horizons::AbstractVector{Int}=1:result.hor)
+        conf_level::Float64 = 0.68,
+        horizons::AbstractVector{Int} = 1:result.hor)
     K = result.nvar
     nhor = length(horizons)
     ndraws = result.ndraws
@@ -87,15 +89,15 @@ function fevd_posterior(result::BVARResult;
             Omega = I(K)
         end
         for (hi, h) in enumerate(horizons)
-            fevd_r = compute_fevd(Phi[1:K*result.nlags, :], Sigma, h; Omega=Omega)
+            fevd_r = compute_fevd(Phi[1:(K * result.nlags), :], Sigma, h; Omega = Omega)
             fevd_all[:, :, hi, d] = fevd_r.decomposition
         end
     end
 
     alpha = (1 - conf_level) / 2
-    med = mapslices(x -> quantile(x, 0.5), fevd_all, dims=4)[:, :, :, 1]
-    lo  = mapslices(x -> quantile(x, alpha), fevd_all, dims=4)[:, :, :, 1]
-    hi  = mapslices(x -> quantile(x, 1-alpha), fevd_all, dims=4)[:, :, :, 1]
+    med = mapslices(x -> quantile(x, 0.5), fevd_all, dims = 4)[:, :, :, 1]
+    lo = mapslices(x -> quantile(x, alpha), fevd_all, dims = 4)[:, :, :, 1]
+    hi = mapslices(x -> quantile(x, 1-alpha), fevd_all, dims = 4)[:, :, :, 1]
 
     return FEVDPosteriorResult(med, lo, hi, conf_level)
 end

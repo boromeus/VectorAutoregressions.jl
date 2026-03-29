@@ -26,7 +26,8 @@ function parse_sign_restriction(s::AbstractString, K::Int)
         else
             [parse(Int, hor_str)]
         end
-        return [(var=var_idx, horizon=h, shock=shock_idx, sign=sign_val) for h in horizons]
+        return [(var = var_idx, horizon = h, shock = shock_idx, sign = sign_val)
+                for h in horizons]
     end
 
     # Narrative restrictions: v(timeperiods, shock)>0  or  v(timeperiods, shock)<0
@@ -43,19 +44,19 @@ function parse_sign_restriction(s::AbstractString, K::Int)
         else
             [parse(Int, time_str)]
         end
-        return [(type=:narrative, times=times, shock=shock_idx, sign=sign_val)]
+        return [(type = :narrative, times = times, shock = shock_idx, sign = sign_val)]
     end
 
-    error("Cannot parse restriction: '$s'")
+    throw(ArgumentError("Cannot parse restriction: '$s'"))
 end
 
 """
-    check_sign_restrictions(ir, restrictions, K)
+    _check_sign_restrictions(ir, restrictions, K)
 
 Check whether the IRF array satisfies all sign restrictions.
 `ir` is K × hor × K. Returns `true` if all satisfied.
 """
-function check_sign_restrictions(ir::AbstractArray{<:Real,3}, restrictions::Vector{String}, K::Int)
+function _check_sign_restrictions(ir::AbstractArray{<:Real, 3}, restrictions::Vector{String}, K::Int)
     for s in restrictions
         parsed = parse_sign_restriction(s, K)
         for r in parsed
@@ -76,13 +77,13 @@ function check_sign_restrictions(ir::AbstractArray{<:Real,3}, restrictions::Vect
 end
 
 """
-    check_narrative_restrictions(structural_shocks, narrative, K)
+    _check_narrative_restrictions(structural_shocks, narrative, K)
 
 Check narrative restrictions on structural shocks.
 `structural_shocks` is T × K.
 """
-function check_narrative_restrictions(structural_shocks::AbstractMatrix,
-                                     narrative::Vector{String}, K::Int)
+function _check_narrative_restrictions(structural_shocks::AbstractMatrix,
+        narrative::Vector{String}, K::Int)
     for s in narrative
         parsed = parse_sign_restriction(s, K)
         for r in parsed
@@ -105,11 +106,11 @@ function check_narrative_restrictions(structural_shocks::AbstractMatrix,
 end
 
 """
-    max_horizon_sign(restrictions, K)
+    _max_horizon_sign(restrictions, K)
 
 Find the maximum horizon referenced in sign restrictions.
 """
-function max_horizon_sign(restrictions::Vector{String}, K::Int)
+function _max_horizon_sign(restrictions::Vector{String}, K::Int)
     max_h = 1
     for s in restrictions
         parsed = parse_sign_restriction(s, K)
@@ -128,17 +129,17 @@ end
 Compute IRFs under sign restrictions using acceptance sampling.
 """
 function irf_sign_restriction(Phi::AbstractMatrix, Sigma::AbstractMatrix,
-                              hor::Int, restrictions::Vector{String};
-                              max_rotations::Int=30000,
-                              rng::AbstractRNG=Random.default_rng())
+        hor::Int, restrictions::Vector{String};
+        max_rotations::Int = 30000,
+        rng::AbstractRNG = Random.default_rng())
     K = size(Sigma, 1)
-    hor0 = max_horizon_sign(restrictions, K)
+    hor0 = _max_horizon_sign(restrictions, K)
 
     for tol in 1:max_rotations
-        Omega = generate_rotation_matrix(K; rng=rng)
-        ir = compute_irf(Phi, Sigma, max(hor, hor0); Omega=Omega)
-        if check_sign_restrictions(ir, restrictions, K)
-            ir_full = compute_irf(Phi, Sigma, hor; Omega=Omega)
+        Omega = generate_rotation_matrix(K; rng = rng)
+        ir = compute_irf(Phi, Sigma, max(hor, hor0); Omega = Omega)
+        if _check_sign_restrictions(ir, restrictions, K)
+            ir_full = compute_irf(Phi, Sigma, hor; Omega = Omega)
             return ir_full, Omega
         end
     end
@@ -153,23 +154,23 @@ end
 Compute IRFs with combined sign and narrative restrictions.
 """
 function irf_narrative_sign(residuals::AbstractMatrix,
-                            Phi::AbstractMatrix, Sigma::AbstractMatrix,
-                            hor::Int, signs::Vector{String}, narrative::Vector{String};
-                            max_rotations::Int=30000,
-                            rng::AbstractRNG=Random.default_rng())
+        Phi::AbstractMatrix, Sigma::AbstractMatrix,
+        hor::Int, signs::Vector{String}, narrative::Vector{String};
+        max_rotations::Int = 30000,
+        rng::AbstractRNG = Random.default_rng())
     K = size(Sigma, 1)
     A = cholesky(Hermitian(Sigma)).L
-    hor0 = max_horizon_sign(signs, K)
+    hor0 = _max_horizon_sign(signs, K)
 
     for tol in 1:max_rotations
-        Omega = generate_rotation_matrix(K; rng=rng)
-        ir = compute_irf(Phi, Sigma, max(hor, hor0); Omega=Omega)
+        Omega = generate_rotation_matrix(K; rng = rng)
+        ir = compute_irf(Phi, Sigma, max(hor, hor0); Omega = Omega)
 
-        if check_sign_restrictions(ir, signs, K)
+        if _check_sign_restrictions(ir, signs, K)
             # Compute structural shocks
             v = residuals / (Omega' * A')
-            if check_narrative_restrictions(v, narrative, K)
-                ir_full = compute_irf(Phi, Sigma, hor; Omega=Omega)
+            if _check_narrative_restrictions(v, narrative, K)
+                ir_full = compute_irf(Phi, Sigma, hor; Omega = Omega)
                 return ir_full, Omega
             end
         end
@@ -218,7 +219,7 @@ function parse_zero_sign_restrictions(restrictions::Vector{String}, K::Int)
             sr[a, b] = parse(Float64, m.captures[3])
             continue
         end
-        error("Cannot parse zero/sign restriction: '$s'")
+        throw(ArgumentError("Cannot parse zero/sign restriction: '$s'"))
     end
 
     f = vcat(ys, yr)
@@ -226,12 +227,12 @@ function parse_zero_sign_restrictions(restrictions::Vector{String}, K::Int)
 end
 
 """
-    findQs(K, f)
+    _findQs(K, f)
 
 Find the Q matrices describing linear restrictions on impact matrix columns.
 Based on Arias et al. (2018).
 """
-function findQs(K::Int, f::AbstractMatrix)
+function _findQs(K::Int, f::AbstractMatrix)
     E = I(K)
     Q_cells = Vector{Matrix{Float64}}(undef, K)
     ranks = Vector{Int}(undef, K)
@@ -241,11 +242,11 @@ function findQs(K::Int, f::AbstractMatrix)
         Q_init = Diagonal(Float64.(diag_vec .== 0))
         ranks[ii] = rank(Q_init)
         # Keep only nonzero rows
-        nonzero_rows = findall(vec(sum(abs.(Matrix(Q_init)), dims=2)) .> 0)
+        nonzero_rows = findall(vec(sum(abs.(Matrix(Q_init)), dims = 2)) .> 0)
         Q_cells[ii] = Matrix(Q_init)[nonzero_rows, :]
     end
 
-    ord = sortperm(ranks, rev=true)
+    ord = sortperm(ranks, rev = true)
     new_ranks = ranks[ord]
 
     # Check identification
@@ -269,18 +270,18 @@ function findQs(K::Int, f::AbstractMatrix)
 end
 
 """
-    findP(C, B, Q_cells, p, K, index)
+    _findP(C, B, Q_cells, p, K, index)
 
 Find rotation matrix P satisfying zero restrictions.
 """
-function findP(C::AbstractMatrix, B::AbstractMatrix, Q_cells::Vector{Matrix{Float64}},
-               p::Int, K::Int, index::Vector{Int})
+function _findP(C::AbstractMatrix, B::AbstractMatrix, Q_cells::Vector{Matrix{Float64}},
+        p::Int, K::Int, index::Vector{Int})
     L0 = C
 
     # Compute long‑run multiplier
     beta = zeros(K, K)
     for ii in 1:p
-        beta += B[(ii-1)*K+1:ii*K, :]'
+        beta += B[((ii - 1) * K + 1):(ii * K), :]'
     end
     Linf = (I(K) - beta) \ C
 
@@ -307,17 +308,17 @@ end
 Compute IRFs with zero and sign restrictions (Arias et al. 2018).
 """
 function irf_zero_sign(Phi::AbstractMatrix, Sigma::AbstractMatrix,
-                       hor::Int, p::Int, restrictions::Vector{String};
-                       var_pos::Vector{Int}=ones(Int, size(Sigma, 1)),
-                       max_draws::Int=1, max_attempts::Int=10000,
-                       rng::AbstractRNG=Random.default_rng())
+        hor::Int, p::Int, restrictions::Vector{String};
+        var_pos::Vector{Int} = ones(Int, size(Sigma, 1)),
+        max_draws::Int = 1, max_attempts::Int = 10000,
+        rng::AbstractRNG = Random.default_rng())
     K = size(Sigma, 1)
     f, sr = parse_zero_sign_restrictions(restrictions, K)
     C1 = cholesky(Hermitian(Sigma)).L
 
-    Q_cells, index, flag = findQs(K, f)
+    Q_cells, index, flag = _findQs(K, f)
     if flag == 1
-        error("Rank condition not satisfied: model is over‑identified")
+        throw(ArgumentError("Rank condition not satisfied: model is over-identified"))
     end
 
     ir = fill(NaN, K, hor, K)
@@ -325,15 +326,16 @@ function irf_zero_sign(Phi::AbstractMatrix, Sigma::AbstractMatrix,
 
     for attempt in 1:max_attempts
         # Generate random factorization
-        C = C1 * generate_rotation_matrix(K; rng=rng)
-        B = vcat(Phi[K*p+1:end, :], Phi[1:K*p, :])
-        P = findP(C, Phi[1:K*p, :], Q_cells, p, K, index)
+        C = C1 * generate_rotation_matrix(K; rng = rng)
+        B = vcat(Phi[(K * p + 1):end, :], Phi[1:(K * p), :])
+        P = _findP(C, Phi[1:(K * p), :], Q_cells, p, K, index)
         W = C * P
         WW = copy(W)
 
         valid = true
         for jj in 1:K
-            shock = zeros(K); shock[jj] = 1.0
+            shock = zeros(K);
+            shock[jj] = 1.0
             chk = W * shock
             sr_idx = findall(.!isnan.(sr[:, jj]))
             if !isempty(sr_idx)
@@ -347,12 +349,12 @@ function irf_zero_sign(Phi::AbstractMatrix, Sigma::AbstractMatrix,
 
         if valid
             # Compute IRF using companion form
-            alpha = vcat(Phi[1:K*p, :]', I(K*(p-1)), zeros(K*(p-1), K)')
+            alpha = vcat(Phi[1:(K * p), :]', I(K*(p-1)), zeros(K*(p-1), K)')
             if K * p > K
                 alpha = zeros(K*p, K*p)
-                alpha[1:K, :] = Phi[1:K*p, :]'
+                alpha[1:K, :] = Phi[1:(K * p), :]'
                 if p > 1
-                    alpha[K+1:K*p, 1:K*(p-1)] = I(K*(p-1))
+                    alpha[(K + 1):(K * p), 1:(K * (p - 1))] = I(K*(p-1))
                 end
             end
 
@@ -360,7 +362,7 @@ function irf_zero_sign(Phi::AbstractMatrix, Sigma::AbstractMatrix,
                 V = zeros(K * p, hor)
                 V[1:K, 1] = W * (I(K)[:, jj])
                 for ii in 2:hor
-                    V[:, ii] = alpha * V[:, ii-1]
+                    V[:, ii] = alpha * V[:, ii - 1]
                 end
                 ir[:, :, jj] = V[1:K, :]
             end

@@ -13,18 +13,18 @@ Normalization: F'F / T = I.
 Named tuple `(factors, loadings, eigenvalues, residuals, scale)`.
 """
 function principal_components(y::AbstractMatrix, nfac::Int;
-                              demean::Symbol=:standardize)
+        demean::Symbol = :standardize)
     T, N = size(y)
     scale = ones(N)
 
     if demean == :standardize
-        μ = mean(y, dims=1)
-        σ = std(y, dims=1)
+        μ = mean(y, dims = 1)
+        σ = std(y, dims = 1)
         σ[σ .== 0] .= 1.0
         ys = (y .- μ) ./ σ
         scale = vec(σ)
     elseif demean == :demean
-        ys = y .- mean(y, dims=1)
+        ys = y .- mean(y, dims = 1)
     else
         ys = copy(y)
     end
@@ -38,8 +38,8 @@ function principal_components(y::AbstractMatrix, nfac::Int;
     ehat = ys - fhat * lambda'
     eigenvalues = F_svd.S
 
-    return (factors=fhat, loadings=lambda, eigenvalues=eigenvalues,
-            residuals=ehat, scale=scale)
+    return (factors = fhat, loadings = lambda, eigenvalues = eigenvalues,
+        residuals = ehat, scale = scale)
 end
 
 """
@@ -49,7 +49,7 @@ Rescale FAVAR loading matrix to original units.
 Port of MATLAB rescaleFAVAR.m.
 """
 function rescale_favar(std_scale::AbstractVector, Lambda::AbstractMatrix,
-                       n_slow::Int; order_pc::Symbol=:factor_first)
+        n_slow::Int; order_pc::Symbol = :factor_first)
     n_w = size(Lambda, 2)
     n2 = size(Lambda, 1)
 
@@ -57,13 +57,13 @@ function rescale_favar(std_scale::AbstractVector, Lambda::AbstractMatrix,
         scale_vec = vcat(std_scale, ones(n_slow))
         Lambda_full = zeros(n2 + n_slow, n_w + n_slow)
         Lambda_full[1:n2, 1:n_w] = Lambda
-        Lambda_full[n2+1:end, n_w+1:end] = I(n_slow)
+        Lambda_full[(n2 + 1):end, (n_w + 1):end] = I(n_slow)
         return scale_vec .* Lambda_full
     else
         scale_vec = vcat(ones(n_slow), std_scale)
         Lambda_full = zeros(n_slow + n2, n_slow + n_w)
         Lambda_full[1:n_slow, 1:n_slow] = I(n_slow)
-        Lambda_full[n_slow+1:end, n_slow+1:end] = Lambda
+        Lambda_full[(n_slow + 1):end, (n_slow + 1):end] = Lambda
         return scale_vec .* Lambda_full
     end
 end
@@ -86,10 +86,10 @@ Estimate a FAVAR model via Gibbs sampling.
 `FAVARResult`.
 """
 function favar(y_slow::AbstractMatrix, y_fast::AbstractMatrix,
-               nfac::Int, p::Int;
-               K::Int=1000, hor::Int=24, constant::Bool=true,
-               burnin::Int=5000, skip::Int=20,
-               rng::AbstractRNG=Random.default_rng())
+        nfac::Int, p::Int;
+        K::Int = 1000, hor::Int = 24, constant::Bool = true,
+        burnin::Int = 5000, skip::Int = 20,
+        rng::AbstractRNG = Random.default_rng())
     T, n1 = size(y_slow)
     _, n2 = size(y_fast)
 
@@ -124,7 +124,7 @@ function favar(y_slow::AbstractMatrix, y_fast::AbstractMatrix,
         y_var = hcat(y_slow, F_current)
 
         # Estimate VAR by OLS
-        v = var_estimate(y_var, p; constant=constant)
+        v = var_estimate(y_var, p; constant = constant)
 
         # ── Draw Sigma from IW ──
         df_post = prior_Sigma_df + v.nobs
@@ -133,23 +133,25 @@ function favar(y_slow::AbstractMatrix, y_fast::AbstractMatrix,
                  (v.Phi - prior_Phi_mean)  # simplified posterior scale
         # Use simpler approach: normal-IW posterior
         S_post = Hermitian(prior_Sigma_scale + v.residuals' * v.residuals)
-        Sigma_draw = rand_inverse_wishart(df_post, S_post; rng=rng)
+        Sigma_draw = rand_inverse_wishart(df_post, S_post; rng = rng)
 
         # ── Draw Phi|Sigma from MN ──
         Phi_cov_post = inv(inv(prior_Phi_cov) + v.X' * v.X)
         Phi_mean_post = Phi_cov_post * (inv(prior_Phi_cov) * prior_Phi_mean +
-                                         v.X' * v.Y)
-        Phi_draw = Phi_mean_post + cholesky(Hermitian(Phi_cov_post)).L *
+                                        v.X' * v.Y)
+        Phi_draw = Phi_mean_post +
+                   cholesky(Hermitian(Phi_cov_post)).L *
                    randn(rng, nk, ny_var) * cholesky(Hermitian(Sigma_draw)).L'
 
         # ── Draw factors conditional on parameters ──
         # Update loadings via OLS: y_fast = F * Lambda' + e
-        Lambda_new = (F_current' * F_current) \ (F_current' * (y_fast .- mean(y_fast, dims=1)))
+        Lambda_new = (F_current' * F_current) \
+                     (F_current' * (y_fast .- mean(y_fast, dims = 1)))
         Lambda_new = Lambda_new'  # n2 × nfac
 
         # Resample factors using Kalman filter on the measurement equation
         # Simplified: use PC extraction + noise
-        resid_f = y_fast .- mean(y_fast, dims=1) - F_current * Lambda_new'
+        resid_f = y_fast .- mean(y_fast, dims = 1) - F_current * Lambda_new'
         sig_e = var(vec(resid_f))
         F_current = pc.factors + sqrt(sig_e) * 0.1 * randn(rng, T, nfac)
 
@@ -166,9 +168,9 @@ function favar(y_slow::AbstractMatrix, y_fast::AbstractMatrix,
     end
 
     # Final VAR estimate for returning
-    v_final = var_estimate(hcat(y_slow, F_current), p; constant=constant)
+    v_final = var_estimate(hcat(y_slow, F_current), p; constant = constant)
 
     return FAVARResult(F_current, Lambda0, v_final,
-                       Phi_store, Sigma_store, ir_store,
-                       nfac, K)
+        Phi_store, Sigma_store, ir_store,
+        nfac, K)
 end

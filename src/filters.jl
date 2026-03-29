@@ -11,7 +11,7 @@ Hodrick–Prescott filter.
 # Returns
 Named tuple `(trend, cycle)`.
 """
-function hp_filter(y::AbstractVector, λ::Real=1600)
+function hp_filter(y::AbstractVector, λ::Real = 1600)
     T = length(y)
     # Build pentadiagonal matrix
     a = 6λ + 1
@@ -23,17 +23,21 @@ function hp_filter(y::AbstractVector, λ::Real=1600)
     d_sup2 = fill(c, T - 2)
 
     M = diagm(0 => d_main, 1 => d_sup1, -1 => d_sup1,
-              2 => d_sup2, -2 => d_sup2)
+        2 => d_sup2, -2 => d_sup2)
 
     # Fix corners
-    M[1, 1] = 1 + λ;       M[1, 2] = -2λ
-    M[2, 1] = -2λ;         M[2, 2] = 5λ + 1
-    M[T-1, T-1] = 5λ + 1;  M[T-1, T] = -2λ
-    M[T, T-1] = -2λ;       M[T, T] = 1 + λ
+    M[1, 1] = 1 + λ;
+    M[1, 2] = -2λ
+    M[2, 1] = -2λ;
+    M[2, 2] = 5λ + 1
+    M[T - 1, T - 1] = 5λ + 1;
+    M[T - 1, T] = -2λ
+    M[T, T - 1] = -2λ;
+    M[T, T] = 1 + λ
 
     trend = M \ y
     cycle = y - trend
-    return (trend=trend, cycle=cycle)
+    return (trend = trend, cycle = cycle)
 end
 
 """
@@ -41,7 +45,7 @@ end
 
 Column‑wise HP filter for matrices.
 """
-function hp_filter(Y::AbstractMatrix, λ::Real=1600)
+function hp_filter(Y::AbstractMatrix, λ::Real = 1600)
     T, K = size(Y)
     trend = similar(Y)
     cycle = similar(Y)
@@ -50,7 +54,7 @@ function hp_filter(Y::AbstractMatrix, λ::Real=1600)
         trend[:, k] = r.trend
         cycle[:, k] = r.cycle
     end
-    return (trend=trend, cycle=cycle)
+    return (trend = trend, cycle = cycle)
 end
 
 """
@@ -66,11 +70,11 @@ Baxter–King band‑pass filter.
 # Returns
 Filtered series (same dimensions as X).
 """
-function bk_filter(X::AbstractVector, pl::Int=6, pu::Int=32)
+function bk_filter(X::AbstractVector, pl::Int = 6, pu::Int = 32)
     T = length(X)
 
     if pu <= pl
-        error("pu must be larger than pl")
+        throw(ArgumentError("pu must be larger than pl"))
     end
     if pl < 2
         pl = 2
@@ -78,7 +82,7 @@ function bk_filter(X::AbstractVector, pl::Int=6, pu::Int=32)
 
     # Remove drift
     drift = (X[T] - X[1]) / (T - 1)
-    Xun = X .- (0:T-1) .* drift
+    Xun = X .- (0:(T - 1)) .* drift
 
     b = 2π / pl
     a = 2π / pu
@@ -106,15 +110,15 @@ function bk_filter(X::AbstractVector, pl::Int=6, pu::Int=32)
     AA[1, 1] = bhat
     AA[T, T] = bhat
 
-    for i in 1:T-1
-        AA[i+1, 1] = AA[i, 1] - B[min(i+1, length(B))]
-        AA[T-i, T] = AA[i, 1] - B[min(i+1, length(B))]
+    for i in 1:(T - 1)
+        AA[i + 1, 1] = AA[i, 1] - B[min(i+1, length(B))]
+        AA[T - i, T] = AA[i, 1] - B[min(i+1, length(B))]
     end
 
     return AA * Xun
 end
 
-function bk_filter(X::AbstractMatrix, pl::Int=6, pu::Int=32)
+function bk_filter(X::AbstractMatrix, pl::Int = 6, pu::Int = 32)
     T, K = size(X)
     out = similar(X)
     for k in 1:K
@@ -131,8 +135,8 @@ Christiano–Fitzgerald (1999) asymmetric band‑pass filter (Random Walk defaul
 # Returns
 Filtered series.
 """
-function cf_filter(X::AbstractVector, pl::Int=6, pu::Int=32;
-                   root::Bool=true, drift::Bool=true)
+function cf_filter(X::AbstractVector, pl::Int = 6, pu::Int = 32;
+        root::Bool = true, drift::Bool = true)
     T = length(X)
     b = 2π / pl
     a = 2π / pu
@@ -140,7 +144,7 @@ function cf_filter(X::AbstractVector, pl::Int=6, pu::Int=32;
     # Remove drift if requested
     if drift
         d = (X[T] - X[1]) / (T - 1)
-        Xun = X .- (0:T-1) .* d
+        Xun = X .- (0:(T - 1)) .* d
     else
         Xun = copy(X)
     end
@@ -189,12 +193,12 @@ function cf_filter(X::AbstractVector, pl::Int=6, pu::Int=32;
     return AA * Xun
 end
 
-function cf_filter(X::AbstractMatrix, pl::Int=6, pu::Int=32;
-                   root::Bool=true, drift::Bool=true)
+function cf_filter(X::AbstractMatrix, pl::Int = 6, pu::Int = 32;
+        root::Bool = true, drift::Bool = true)
     T, K = size(X)
     out = similar(X)
     for k in 1:K
-        out[:, k] = cf_filter(X[:, k], pl, pu; root=root, drift=drift)
+        out[:, k] = cf_filter(X[:, k], pl, pu; root = root, drift = drift)
     end
     return out
 end
@@ -209,16 +213,16 @@ Hamilton (2018) detrending filter using direct regression.
 # Returns
 Named tuple `(trend, cycle)` with NaN‑padding for initial observations.
 """
-function hamilton_filter(X::AbstractVector, h::Int=8, d::Int=4;
-                         constant::Bool=true)
+function hamilton_filter(X::AbstractVector, h::Int = 8, d::Int = 4;
+        constant::Bool = true)
     T = length(X)
-    yh = X[d+h:T]
+    yh = X[(d + h):T]
     Teff = length(yh)
 
     # Build RHS
     R = constant ? ones(Teff, 1) : Matrix{Float64}(undef, Teff, 0)
     for j in 1:d
-        R = hcat(R, X[d+1-j:T-h+1-j])
+        R = hcat(R, X[(d + 1 - j):(T - h + 1 - j)])
     end
 
     # OLS
@@ -229,21 +233,21 @@ function hamilton_filter(X::AbstractVector, h::Int=8, d::Int=4;
     # Pad with NaN
     trend = fill(NaN, T)
     cycle = fill(NaN, T)
-    trend[d+h:T] = trend_part
-    cycle[d+h:T] = cycle_part
+    trend[(d + h):T] = trend_part
+    cycle[(d + h):T] = cycle_part
 
-    return (trend=trend, cycle=cycle)
+    return (trend = trend, cycle = cycle)
 end
 
-function hamilton_filter(X::AbstractMatrix, h::Int=8, d::Int=4;
-                         constant::Bool=true)
+function hamilton_filter(X::AbstractMatrix, h::Int = 8, d::Int = 4;
+        constant::Bool = true)
     T, K = size(X)
     trend = fill(NaN, T, K)
     cycle = fill(NaN, T, K)
     for k in 1:K
-        r = hamilton_filter(X[:, k], h, d; constant=constant)
+        r = hamilton_filter(X[:, k], h, d; constant = constant)
         trend[:, k] = r.trend
         cycle[:, k] = r.cycle
     end
-    return (trend=trend, cycle=cycle)
+    return (trend = trend, cycle = cycle)
 end

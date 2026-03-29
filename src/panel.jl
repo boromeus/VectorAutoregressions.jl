@@ -17,7 +17,7 @@ Estimate a panel VAR.
 `PanelVARResult`.
 """
 function panel_var(panels::Vector{<:AbstractMatrix}, p::Int;
-                   method::Symbol=:pooled, constant::Bool=true)
+        method::Symbol = :pooled, constant::Bool = true)
     n_units = length(panels)
     K = size(panels[1], 2)
 
@@ -25,7 +25,7 @@ function panel_var(panels::Vector{<:AbstractMatrix}, p::Int;
         # Estimate each unit separately
         unit_results = VAREstimate[]
         for panel in panels
-            v = var_estimate(panel, p; constant=constant)
+            v = var_estimate(panel, p; constant = constant)
             push!(unit_results, v)
         end
         # Average coefficients and covariance
@@ -42,7 +42,7 @@ function panel_var(panels::Vector{<:AbstractMatrix}, p::Int;
 
         first = true
         for panel in panels
-            v = var_estimate(panel, p; constant=constant)
+            v = var_estimate(panel, p; constant = constant)
             push!(unit_results, v)
             Y_all = vcat(Y_all, v.Y)
             if first
@@ -60,7 +60,7 @@ function panel_var(panels::Vector{<:AbstractMatrix}, p::Int;
         Sigma_pooled = (resid_pooled' * resid_pooled) / size(resid_pooled, 1)
 
         return PanelVARResult(Phi_pooled, Sigma_pooled, resid_pooled,
-                              unit_results, :pooled)
+            unit_results, :pooled)
     end
 end
 
@@ -70,8 +70,8 @@ end
 Alternative interface: single data matrix with unit identifiers.
 """
 function panel_var(data::AbstractMatrix, unit_ids::AbstractVector, p::Int;
-                   method::Symbol=:pooled, constant::Bool=true)
+        method::Symbol = :pooled, constant::Bool = true)
     unique_ids = sort(unique(unit_ids))
     panels = [data[unit_ids .== id, :] for id in unique_ids]
-    return panel_var(panels, p; method=method, constant=constant)
+    return panel_var(panels, p; method = method, constant = constant)
 end

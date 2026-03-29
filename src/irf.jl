@@ -18,8 +18,8 @@ Compute impulse response functions from VAR parameters.
 3D array of size K × hor × n_shocks.
 """
 function compute_irf(Phi::AbstractMatrix, Sigma::AbstractMatrix, hor::Int;
-                     Omega::AbstractMatrix=Matrix{Float64}(I, size(Sigma, 1), size(Sigma, 1)),
-                     unit::Bool=true)
+        Omega::AbstractMatrix = Matrix{Float64}(I, size(Sigma, 1), size(Sigma, 1)),
+        unit::Bool = true)
     K = size(Sigma, 1)
     m = size(Phi, 1)
     n_shocks = size(Omega, 2)
@@ -46,7 +46,7 @@ function compute_irf(Phi::AbstractMatrix, Sigma::AbstractMatrix, hor::Int;
     F = zeros(Kp, Kp)
     F[1:K, :] = Phi[1:min(Kp, m), 1:K]'
     if p > 1
-        F[K+1:Kp, 1:K*(p-1)] = I(K*(p-1))
+        F[(K + 1):Kp, 1:(K * (p - 1))] = I(K*(p-1))
     end
     G = zeros(Kp, K)
     G[1:K, :] = I(K)
@@ -71,7 +71,8 @@ function compute_irf_longrun(Phi::AbstractMatrix, Sigma::AbstractMatrix, hor::In
     K = size(Sigma, 1)
     Kp = K * p
     F = companion_form(Phi, K, p)
-    G = zeros(Kp, K); G[1:K, :] = I(K)
+    G = zeros(Kp, K);
+    G[1:K, :] = I(K)
     Inp = I(Kp)
 
     # Long‑run multiplier C(1) = (I - F)^{-1}
@@ -104,16 +105,16 @@ end
 Proxy/IV identification following Mertens & Ravn (2013).
 """
 function compute_irf_proxy(Phi::AbstractMatrix, Sigma::AbstractMatrix,
-                           residuals::AbstractMatrix, instrument::AbstractMatrix,
-                           hor::Int, p::Int;
-                           proxy_end::Int=0, compute_F_stat::Bool=false)
+        residuals::AbstractMatrix, instrument::AbstractMatrix,
+        hor::Int, p::Int;
+        proxy_end::Int = 0, compute_F_stat::Bool = false)
     T_res, K = size(residuals)
     T_m = size(instrument, 1)
 
     # Align instrument with residuals (instrument assumed to start at same point)
     res_start = T_res - T_m - proxy_end + 1
-    res_end   = T_res - proxy_end
-    res_sub   = residuals[res_start:res_end, :]
+    res_end = T_res - proxy_end
+    res_sub = residuals[res_start:res_end, :]
 
     # 2SLS identification
     XX = hcat(ones(T_m), instrument)
@@ -137,14 +138,15 @@ function compute_irf_proxy(Phi::AbstractMatrix, Sigma::AbstractMatrix,
     # Compute IRFs
     Kp = K * p
     F = companion_form(Phi, K, p)
-    G = zeros(Kp, K); G[1:K, :] = I(K)
+    G = zeros(Kp, K);
+    G[1:K, :] = I(K)
 
     irs = zeros(hor, K)
     irs[1, :] = b1
     for h in 2:hor
         lvars = zeros(Kp)
-        for j in 1:min(h-1, p)
-            lvars[(j-1)*K+1:j*K] = irs[h-j, :]
+        for j in 1:min(h - 1, p)
+            lvars[((j - 1) * K + 1):(j * K)] = irs[h - j, :]
         end
         irs[h, :] = (Phi[1:Kp, :]' * lvars)
     end
@@ -153,7 +155,7 @@ function compute_irf_proxy(Phi::AbstractMatrix, Sigma::AbstractMatrix,
     F_stat = NaN
     if compute_F_stat
         res_const = res_sub[:, 1] .- mean(res_sub[:, 1])
-        res_full  = res_sub[:, 1] - XX * Phib[:, 1]
+        res_full = res_sub[:, 1] - XX * Phib[:, 1]
         SST = res_const' * res_const
         SSE = res_full' * res_full
         n_m = size(instrument, 2)

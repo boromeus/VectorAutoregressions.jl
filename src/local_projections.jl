@@ -24,14 +24,14 @@ Compute local‑projection impulse responses.
 # Returns
 `LPResult`.
 """
-function lp_irf(y::AbstractMatrix, p::Union{Int,Vector{Int}}, H::Int;
-                constant::Bool=true, identification::Symbol=:cholesky,
-                Q::Union{Nothing,AbstractMatrix}=nothing,
-                controls::Union{Nothing,AbstractMatrix}=nothing,
-                proxy::Union{Nothing,AbstractMatrix}=nothing,
-                robust_se::Bool=true,
-                conf_level::Float64=0.90,
-                clags::Int=0)
+function lp_irf(y::AbstractMatrix, p::Union{Int, Vector{Int}}, H::Int;
+        constant::Bool = true, identification::Symbol = :cholesky,
+        Q::Union{Nothing, AbstractMatrix} = nothing,
+        controls::Union{Nothing, AbstractMatrix} = nothing,
+        proxy::Union{Nothing, AbstractMatrix} = nothing,
+        robust_se::Bool = true,
+        conf_level::Float64 = 0.90,
+        clags::Int = 0)
     T, K = size(y)
     pvec = p isa Int ? fill(p, H) : p
     nx = constant ? 1 : 0
@@ -58,12 +58,12 @@ function lp_irf(y::AbstractMatrix, p::Union{Int,Vector{Int}}, H::Int;
         ph = hh == 0 ? pmax : pvec[hh]
 
         # LHS: y_{t+h}
-        ytmp = y[ph + hh + 1:T, :]
+        ytmp = y[(ph + hh + 1):T, :]
         Teff = size(ytmp, 1)
 
         # RHS
         Xr = _build_lp_rhs(y, T, K, ph, hh, constant, controls, proxy, clags)
-        positions_nylags = 1:K*ph
+        positions_nylags = 1:(K * ph)
         nk = size(Xr, 2)
 
         # OLS
@@ -79,15 +79,16 @@ function lp_irf(y::AbstractMatrix, p::Union{Int,Vector{Int}}, H::Int;
                 Omega = cholesky(Hermitian(cov(resid))).L * Q
             end
             if identification == :proxy && proxy !== nothing
-                proxy_pos = K * ph + (controls !== nothing ? size(controls, 2) * (clags + 1) : 0) + 1
-                Omega_proxy = beta[proxy_pos:proxy_pos+ns-1, :]'
+                proxy_pos = K * ph +
+                            (controls !== nothing ? size(controls, 2) * (clags + 1) : 0) + 1
+                Omega_proxy = beta[proxy_pos:(proxy_pos + ns - 1), :]'
                 irf_proxy_impact = Omega_proxy
             end
             irf_out[1, :] = vec(Omega')
         else
             # hh > 0: LP-IRF via one-step ahead propagation
-            Phi_h = beta[1:K*ph, :]
-            ir = compute_irf(Phi_h, Matrix{Float64}(I, K, K), 2; Omega=Omega)
+            Phi_h = beta[1:(K * ph), :]
+            ir = compute_irf(Phi_h, Matrix{Float64}(I, K, K), 2; Omega = Omega)
             irf_out[hh + 1, :] = vec(ir[:, 2, :]')
         end
 
@@ -102,11 +103,11 @@ function lp_irf(y::AbstractMatrix, p::Union{Int,Vector{Int}}, H::Int;
             # SE on impact comes from Omega uncertainty
             std_out[1, :] = vec(Omega') .* 0  # impact is exact given Omega
         else
-            se_Phi = se_beta[1:K*ph, :]
-            ir_up = compute_irf(beta[1:K*ph, :] .+ talpha .* se_Phi,
-                                Matrix{Float64}(I, K, K), 2; Omega=Omega)
-            ir_lo = compute_irf(beta[1:K*ph, :] .- talpha .* se_Phi,
-                                Matrix{Float64}(I, K, K), 2; Omega=Omega)
+            se_Phi = se_beta[1:(K * ph), :]
+            ir_up = compute_irf(beta[1:(K * ph), :] .+ talpha .* se_Phi,
+                Matrix{Float64}(I, K, K), 2; Omega = Omega)
+            ir_lo = compute_irf(beta[1:(K * ph), :] .- talpha .* se_Phi,
+                Matrix{Float64}(I, K, K), 2; Omega = Omega)
             upper_point = vec(ir_up[:, 2, :]')
             lower_point = vec(ir_lo[:, 2, :]')
             std_out[hh + 1, :] = abs.(upper_point .- irf_out[hh + 1, :]) ./ talpha
@@ -133,13 +134,13 @@ function lp_lagorder(y::AbstractMatrix, pbar::Int, H::Int, ic::String)
         IC = zeros(pbar)
         for m in 1:pbar
             # Build X with m lags and constant
-            ytmp = y[pbar + h + 1:T, :]
+            ytmp = y[(pbar + h + 1):T, :]
             Teff = size(ytmp, 1)
             X = ones(Teff, 1)
             for lag in 1:m
-                X = hcat(X, y[pbar + 1 - lag:T - h - lag, :])
+                X = hcat(X, y[(pbar + 1 - lag):(T - h - lag), :])
             end
-            yt = y[pbar:T - h, :]  # RHS variable of interest
+            yt = y[pbar:(T - h), :]  # RHS variable of interest
             yt = yt[1:Teff, :]
 
             Mx = I - X / (X' * X) * X'
@@ -162,19 +163,19 @@ function _build_lp_rhs(y, T, K, ph, hh, constant, controls, proxy, clags)
 
     # Lags of y
     for lag in 1:ph
-        X = hcat(X, y[ph + 1 - lag:T - hh - lag, :])
+        X = hcat(X, y[(ph + 1 - lag):(T - hh - lag), :])
     end
 
     # Controls
     if controls !== nothing
         for cl in 0:clags
-            X = hcat(X, controls[ph + 1 - cl:T - hh - cl, :])
+            X = hcat(X, controls[(ph + 1 - cl):(T - hh - cl), :])
         end
     end
 
     # Proxy
     if proxy !== nothing
-        X = hcat(X, proxy[ph + 1:T - hh, :])
+        X = hcat(X, proxy[(ph + 1):(T - hh), :])
     end
 
     # Constant
@@ -192,12 +193,12 @@ function _newey_west_se(y, X, beta, bandwidth)
     M = bandwidth
 
     # HAC estimator
-    u_mean = mean(u, dims=1)
+    u_mean = mean(u, dims = 1)
     u0 = u .- u_mean
     S = (u0' * u0) / T
 
     for j in 1:M
-        Rj = (u0[1:end-j, :]' * u0[j+1:end, :]) / T
+        Rj = (u0[1:(end - j), :]' * u0[(j + 1):end, :]) / T
         S = S .+ (1 - j / (M + 1)) * (Rj + Rj')
     end
 
@@ -231,6 +232,6 @@ function _compute_ic(Sigma, K, p, t, ic)
     elseif ic == "hqc"
         return ld + 2 * log(log(t)) * K^2 * p / t
     else
-        error("ic must be aic, bic, aicc or hqc")
+        throw(ArgumentError("ic must be aic, bic, aicc or hqc"))
     end
 end
