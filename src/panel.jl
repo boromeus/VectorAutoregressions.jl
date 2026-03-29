@@ -17,7 +17,7 @@ Estimate a panel VAR.
 `PanelVARResult`.
 """
 function panel_var(panels::Vector{<:AbstractMatrix}, p::Int;
-        method::Symbol = :pooled, constant::Bool = true)
+                   method::Symbol=:pooled, constant::Bool=true)
     n_units = length(panels)
     K = size(panels[1], 2)
 
@@ -25,7 +25,7 @@ function panel_var(panels::Vector{<:AbstractMatrix}, p::Int;
         # Estimate each unit separately
         unit_results = VAREstimate[]
         for panel in panels
-            v = var_estimate(panel, p; constant = constant)
+            v = var_estimate(panel, p; constant=constant)
             push!(unit_results, v)
         end
         # Average coefficients and covariance
@@ -33,6 +33,38 @@ function panel_var(panels::Vector{<:AbstractMatrix}, p::Int;
         Sigma_avg = mean([r.Sigma for r in unit_results])
         resid_all = vcat([r.residuals for r in unit_results]...)
         return PanelVARResult(Phi_avg, Sigma_avg, resid_all, unit_results, :unit)
+
+    elseif method == :shrinkage
+        # Mean‑group estimator with empirical Bayes shrinkage
+        unit_results = VAREstimate[]
+        for panel in panels
+            v = var_estimate(panel, p; constant=constant)
+            push!(unit_results, v)
+        end
+
+        nk = size(unit_results[1].Phi, 1)
+        Phi_bar = mean([r.Phi for r in unit_results])
+
+        # Between‑unit variance (element‑wise)
+        Phi_stack = cat([r.Phi for r in unit_results]...; dims=3)
+        V_between = var(Phi_stack; dims=3)[:, :, 1]
+
+        # Mean within‑unit variance: average tr(Σᵢ ⊗ (X'X)⁻¹ᵢ) across units
+        tr_within = mean([tr(r.Sigma) * tr(r.XXi) for r in unit_results])
+        tr_between = sum(abs2, V_between)
+
+        # Shrinkage weight: w → 1 means shrink to mean; w → 0 means keep individual
+        w = tr_between / (tr_between + tr_within + eps())
+        w = clamp(w, 0.0, 1.0)
+
+        # Shrink each unit's coefficients toward the mean
+        Phi_shrunk = [w * Phi_bar + (1.0 - w) * r.Phi for r in unit_results]
+        Phi_avg = mean(Phi_shrunk)
+        Sigma_avg = mean([r.Sigma for r in unit_results])
+        resid_all = vcat([r.residuals for r in unit_results]...)
+
+        return PanelVARResult(Phi_avg, Sigma_avg, resid_all, unit_results, :shrinkage)
+
     else
         # Pooled estimation: stack all data
         Y_all = Matrix{Float64}(undef, 0, K)
@@ -42,7 +74,7 @@ function panel_var(panels::Vector{<:AbstractMatrix}, p::Int;
 
         first = true
         for panel in panels
-            v = var_estimate(panel, p; constant = constant)
+            v = var_estimate(panel, p; constant=constant)
             push!(unit_results, v)
             Y_all = vcat(Y_all, v.Y)
             if first
@@ -60,7 +92,7 @@ function panel_var(panels::Vector{<:AbstractMatrix}, p::Int;
         Sigma_pooled = (resid_pooled' * resid_pooled) / size(resid_pooled, 1)
 
         return PanelVARResult(Phi_pooled, Sigma_pooled, resid_pooled,
-            unit_results, :pooled)
+                              unit_results, :pooled)
     end
 end
 
@@ -70,8 +102,8 @@ end
 Alternative interface: single data matrix with unit identifiers.
 """
 function panel_var(data::AbstractMatrix, unit_ids::AbstractVector, p::Int;
-        method::Symbol = :pooled, constant::Bool = true)
+                   method::Symbol=:pooled, constant::Bool=true)
     unique_ids = sort(unique(unit_ids))
     panels = [data[unit_ids .== id, :] for id in unique_ids]
-    return panel_var(panels, p; method = method, constant = constant)
+    return panel_var(panels, p; method=method, constant=constant)
 end

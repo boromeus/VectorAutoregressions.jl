@@ -14,6 +14,7 @@ using Statistics
 using Random
 using Distributions: TDist, quantile
 using SpecialFunctions: loggamma
+using Optim
 
 # ─── Source files ────────────────────────────────────────────────────────────────
 
@@ -34,6 +35,7 @@ include("kalman.jl")
 include("panel.jl")
 include("favar_new.jl")
 include("filters.jl")
+include("business_cycle.jl")
 include("plotting.jl")
 
 # ─── Exports ─────────────────────────────────────────────────────────────────────
@@ -47,6 +49,8 @@ export VAREstimate, BVARResult, IRFResult
 export FEVDResult, FEVDPosteriorResult
 export ForecastResult, HistDecompResult, ConnectednessResult
 export LPResult, PanelVARResult, FAVARResult, InfoCriteria
+export LPBayesianResult, MixedFreqVARResult
+export BusinessCycleResult, BNDecompResult
 
 # Estimation
 export var_estimate, var_lagorder, information_criteria, rfvar3
@@ -81,19 +85,22 @@ export compute_connectedness, connectedness_posterior
 export compute_marginal_likelihood, optimize_hyperparameters
 
 # Local Projections
-export lp_irf, lp_lagorder
+export lp_irf, lp_lagorder, lp_bayesian, lp_marginal_likelihood
 
 # Kalman Filter
-export kalman_filter
+export kalman_filter, mixed_freq_var
 
 # Panel VAR
 export panel_var
 
 # FAVAR
-export principal_components, rescale_favar, favar
+export principal_components, rescale_favar, favar, bbe_rotation
 
 # Filters
 export hp_filter, bk_filter, cf_filter, hamilton_filter
+
+# Business Cycle
+export bry_boschan, bn_decomposition
 
 # Utilities
 export lagmatrix, companion_form, check_stability

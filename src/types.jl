@@ -226,3 +226,40 @@ struct FAVARResult
     nfactors::Int
     ndraws::Int
 end
+
+# ─── LP‑Bayesian Results ────────────────────────────────────────────────────────
+
+struct LPBayesianResult
+    irf::Array{Float64,3}          # K × (H+1) × K  median
+    lower::Array{Float64,3}        # K × (H+1) × K
+    upper::Array{Float64,3}        # K × (H+1) × K
+    Phi_draws::Array{Float64,4}    # nk × K × (H+1) × ndraws
+    Sigma_draws::Array{Float64,4}  # K × K × (H+1) × ndraws
+    horizon::Int
+    conf_level::Float64
+    ndraws::Int
+end
+
+# ─── Mixed‑Frequency VAR ────────────────────────────────────────────────────────
+
+struct MixedFreqVARResult
+    Phi::Matrix{Float64}
+    Sigma::Matrix{Float64}
+    y_interpolated::Matrix{Float64}   # T × K with NaNs filled in
+    states::Matrix{Float64}
+    logL::Float64
+    niter::Int
+    converged::Bool
+end
+
+# ─── Business Cycle ─────────────────────────────────────────────────────────────
+
+struct BusinessCycleResult
+    peaks::Vector{Int}
+    troughs::Vector{Int}
+end
+
+struct BNDecompResult
+    permanent::Matrix{Float64}    # T × K
+    transitory::Matrix{Float64}   # T × K
+end
