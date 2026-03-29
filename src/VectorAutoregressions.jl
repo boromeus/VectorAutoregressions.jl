@@ -58,11 +58,14 @@ export bvar, classical_var
 export get_prior_moments, build_dummy_observations, compute_prior_posterior
 
 # IRF
-export compute_irf, compute_irf_longrun, compute_irf_proxy
+export compute_irf, compute_irf_longrun, compute_irf_proxy, compute_irf_heterosked
+export wild_bootstrap_irf_proxy
 
 # Identification
 export irf_sign_restriction, irf_narrative_sign, irf_zero_sign
 export parse_sign_restriction, parse_zero_sign_restrictions
+export check_sign_restrictions, check_narrative_restrictions
+export max_horizon_sign, findQs, findP
 
 # FEVD & Historical Decomposition
 export compute_fevd, fevd_posterior

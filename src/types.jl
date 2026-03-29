@@ -26,11 +26,11 @@ Minnesota prior implemented via dummy observations.
 - `omega::Float64`:  shock‑variance weight (default 2.0)
 """
 Base.@kwdef struct MinnesotaPrior <: AbstractPrior
-    tau::Float64 = 3.0
-    decay::Float64 = 0.5
+    tau::Float64    = 3.0
+    decay::Float64  = 0.5
     lambda::Float64 = 5.0
-    mu::Float64 = 2.0
-    omega::Float64 = 2.0
+    mu::Float64     = 2.0
+    omega::Float64  = 2.0
 end
 
 """
@@ -121,19 +121,20 @@ struct BVARResult
     var::VAREstimate
     prior::AbstractPrior
     identification::AbstractIdentification
-    Phi_draws::Array{Float64, 3}         # (Kp+nx) × K × ndraws
-    Sigma_draws::Array{Float64, 3}       # K × K × ndraws
-    ir_draws::Array{Float64, 4}          # K × hor × K × ndraws  (variable, horizon, shock, draw)
-    irlr_draws::Array{Float64, 4}        # long‑run IRFs
-    irsign_draws::Array{Float64, 4}      # sign‑restriction IRFs
-    irnarrsign_draws::Array{Float64, 4}  # narrative+sign IRFs
-    irzerosign_draws::Array{Float64, 4}  # zero+sign IRFs
-    irproxy_draws::Array{Float64, 4}     # proxy IRFs
-    e_draws::Array{Float64, 3}           # T × K × ndraws  residuals
-    Omega_draws::Array{Float64, 3}       # K × K × ndraws  rotation matrices
-    forecasts_no_shocks::Array{Float64, 3}   # fhor × K × ndraws
-    forecasts_with_shocks::Array{Float64, 3} # fhor × K × ndraws
-    forecasts_conditional::Array{Float64, 3} # fhor × K × ndraws
+    Phi_draws::Array{Float64,3}         # (Kp+nx) × K × ndraws
+    Sigma_draws::Array{Float64,3}       # K × K × ndraws
+    ir_draws::Array{Float64,4}          # K × hor × K × ndraws  (variable, horizon, shock, draw)
+    irlr_draws::Array{Float64,4}        # long‑run IRFs
+    irsign_draws::Array{Float64,4}      # sign‑restriction IRFs
+    irnarrsign_draws::Array{Float64,4}  # narrative+sign IRFs
+    irzerosign_draws::Array{Float64,4}  # zero+sign IRFs
+    irproxy_draws::Array{Float64,4}     # proxy IRFs
+    irheterosked_draws::Array{Float64,4} # heteroskedasticity IRFs
+    e_draws::Array{Float64,3}           # T × K × ndraws  residuals
+    Omega_draws::Array{Float64,3}       # K × K × ndraws  rotation matrices
+    forecasts_no_shocks::Array{Float64,3}   # fhor × K × ndraws
+    forecasts_with_shocks::Array{Float64,3} # fhor × K × ndraws
+    forecasts_conditional::Array{Float64,3} # fhor × K × ndraws
     marginal_likelihood::Float64
     info_criteria::InfoCriteria
     ndraws::Int
@@ -146,9 +147,9 @@ end
 # ─── IRF Results ────────────────────────────────────────────────────────────────
 
 struct IRFResult
-    irf::Array{Float64, 3}       # K × (hor+1) × K   median / point
-    lower::Array{Float64, 3}     # K × (hor+1) × K
-    upper::Array{Float64, 3}     # K × (hor+1) × K
+    irf::Array{Float64,3}       # K × (hor+1) × K   median / point
+    lower::Array{Float64,3}     # K × (hor+1) × K
+    upper::Array{Float64,3}     # K × (hor+1) × K
     horizon::Int
     conf_level::Float64
 end
@@ -161,9 +162,9 @@ struct FEVDResult
 end
 
 struct FEVDPosteriorResult
-    median::Array{Float64, 3}    # K × K × hor
-    lower::Array{Float64, 3}
-    upper::Array{Float64, 3}
+    median::Array{Float64,3}    # K × K × hor
+    lower::Array{Float64,3}
+    upper::Array{Float64,3}
     conf_level::Float64
 end
 
@@ -172,13 +173,13 @@ end
 struct ForecastResult
     point_no_shocks::Matrix{Float64}    # fhor × K
     point_with_shocks::Matrix{Float64}  # fhor × K
-    conditional::Union{Nothing, Matrix{Float64}}
+    conditional::Union{Nothing,Matrix{Float64}}
 end
 
 # ─── Historical Decomposition ───────────────────────────────────────────────────
 
 struct HistDecompResult
-    decomposition::Array{Float64, 3}  # T × K × (K+nextra)  last = deterministic
+    decomposition::Array{Float64,3}  # T × K × (K+nextra)  last = deterministic
     structural_shocks::Matrix{Float64}  # T × K
 end
 
@@ -219,9 +220,9 @@ struct FAVARResult
     factors::Matrix{Float64}
     loadings::Matrix{Float64}
     var::VAREstimate
-    Phi_draws::Array{Float64, 3}
-    Sigma_draws::Array{Float64, 3}
-    ir_draws::Array{Float64, 4}
+    Phi_draws::Array{Float64,3}
+    Sigma_draws::Array{Float64,3}
+    ir_draws::Array{Float64,4}
     nfactors::Int
     ndraws::Int
 end
