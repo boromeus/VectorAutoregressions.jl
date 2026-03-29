@@ -219,14 +219,77 @@ end
     @testset "FEVD" begin
         y, _, _ = generate_var_data(200, 2, 1)
         v = var_estimate(y, 1; constant=true)
+        y3fevd, _, _ = generate_var_data(200, 3, 1)
+        v3fevd = var_estimate(y3fevd, 1; constant=true)
 
-        @testset "compute_fevd" begin
-            fevd = compute_fevd(v.Phi, v.Sigma, 12)
-            @test size(fevd.decomposition) == (2, 2)
-            # Rows should sum to 100 (percentages)
-            for i in 1:2
-                @test sum(fevd.decomposition[i, :]) ≈ 100.0 atol = 1.0
+        @testset "compute_fevd — row sums = 100 at multiple horizons" begin
+            for h in [1, 6, 12, 24]
+                fevd = compute_fevd(v.Phi, v.Sigma, h)
+                @test size(fevd.decomposition) == (2, 2)
+                @test fevd.horizon == h
+                for i in 1:2
+                    @test sum(fevd.decomposition[i, :]) ≈ 100.0 atol=1e-8
+                end
             end
+        end
+
+        @testset "compute_fevd — 3-variable row sums = 100" begin
+            for h in [1, 12]
+                fevd = compute_fevd(v3fevd.Phi, v3fevd.Sigma, h)
+                @test size(fevd.decomposition) == (3, 3)
+                for i in 1:3
+                    @test sum(fevd.decomposition[i, :]) ≈ 100.0 atol=1e-8
+                end
+            end
+        end
+
+        @testset "compute_fevd — impact own-shock dominance" begin
+            fevd = compute_fevd(v.Phi, v.Sigma, 1)
+            for i in 1:2
+                @test fevd.decomposition[i, i] == maximum(fevd.decomposition[i, :])
+            end
+        end
+
+        @testset "compute_fevd — all entries non-negative" begin
+            fevd = compute_fevd(v3fevd.Phi, v3fevd.Sigma, 12)
+            @test all(fevd.decomposition .>= -1e-10)
+        end
+
+        @testset "compute_fevd — univariate" begin
+            y1 = randn(Random.MersenneTwister(99), 200, 1)
+            v1 = var_estimate(y1 .+ cumsum(0.3*randn(Random.MersenneTwister(100), 200, 1), dims=1), 1; constant=true)
+            fevd = compute_fevd(v1.Phi, v1.Sigma, 12)
+            @test fevd.decomposition[1, 1] ≈ 100.0 atol=1e-8
+        end
+
+        @testset "compute_fevd — multi-lag p=2" begin
+            y3p2, _, _ = generate_var_data(300, 3, 2)
+            v3p2 = var_estimate(y3p2, 2; constant=true)
+            for h in [1, 6, 12]
+                fevd = compute_fevd(v3p2.Phi, v3p2.Sigma, h)
+                for i in 1:3
+                    @test sum(fevd.decomposition[i, :]) ≈ 100.0 atol=1e-8
+                end
+            end
+        end
+
+        @testset "compute_fevd — custom Omega rotation" begin
+            rng = Random.MersenneTwister(42)
+            Q = generate_rotation_matrix(2; rng=rng)
+            fevd = compute_fevd(v.Phi, v.Sigma, 12; Omega=Q)
+            for i in 1:2
+                @test sum(fevd.decomposition[i, :]) ≈ 100.0 atol=1e-8
+            end
+            @test all(fevd.decomposition .>= -1e-10)
+        end
+
+        @testset "fevd_posterior — type and bands" begin
+            result = bvar(y, 1; prior=FlatPrior(), K=50, hor=6, fhor=4, verbose=false)
+            fp = fevd_posterior(result; horizons=[1, 3, 6])
+            @test fp isa FEVDPosteriorResult
+            @test size(fp.median) == (2, 2, 3)
+            @test all(fp.lower .<= fp.median .+ 1e-10)
+            @test all(fp.median .<= fp.upper .+ 1e-10)
         end
     end
 
@@ -235,13 +298,65 @@ end
         y, _, _ = generate_var_data(200, 2, 1)
         v = var_estimate(y, 1; constant=true)
 
-        @testset "forecast_unconditional" begin
+        @testset "forecast_unconditional — shapes" begin
             initval = y[end:end, :]
-            xdata = ones(8, 1)  # constant
-            fno, fwith = forecast_unconditional(initval, xdata,
-                                                 v.Phi, v.Sigma, 8, 1)
+            xdata = ones(8, 1)
+            fno, fwith = forecast_unconditional(initval, xdata, v.Phi, v.Sigma, 8, 1)
             @test size(fno) == (8, 2)
             @test size(fwith) == (8, 2)
+        end
+
+        @testset "forecast_unconditional — no-shock is deterministic" begin
+            initval = y[end:end, :]
+            xdata = ones(8, 1)
+            fno1, _ = forecast_unconditional(initval, xdata, v.Phi, v.Sigma, 8, 1;
+                                              rng=Random.MersenneTwister(1))
+            fno2, _ = forecast_unconditional(initval, xdata, v.Phi, v.Sigma, 8, 1;
+                                              rng=Random.MersenneTwister(999))
+            @test fno1 ≈ fno2 atol=1e-12
+        end
+
+        @testset "forecast_unconditional — with-shock reproducibility" begin
+            initval = y[end:end, :]
+            xdata = ones(8, 1)
+            _, fw1 = forecast_unconditional(initval, xdata, v.Phi, v.Sigma, 8, 1;
+                                             rng=Random.MersenneTwister(42))
+            _, fw2 = forecast_unconditional(initval, xdata, v.Phi, v.Sigma, 8, 1;
+                                             rng=Random.MersenneTwister(42))
+            @test fw1 ≈ fw2 atol=1e-12
+        end
+
+        @testset "forecast_unconditional — flat-prior BVAR ≈ OLS" begin
+            result = bvar(y, 1; prior=FlatPrior(), K=200, hor=6, fhor=8, verbose=false)
+            bvar_fno_mean = mean(result.forecasts_no_shocks, dims=3)[:, :, 1]
+            initval = y[end:end, :]
+            xdata = ones(8, 1)
+            ols_fno, _ = forecast_unconditional(initval, xdata, v.Phi, v.Sigma, 8, 1)
+            @test bvar_fno_mean ≈ ols_fno atol=0.5
+        end
+
+        @testset "forecast_conditional — hits target exactly" begin
+            initval = y[end:end, :]
+            xdata = ones(8, 1)
+            endo_index = [1]
+            endo_path = zeros(8, 1)
+            for t in 1:8
+                endo_path[t, 1] = 0.5 * sin(t * π / 4)
+            end
+            cf, shocks = forecast_conditional(endo_path, endo_index,
+                initval, xdata, v.Phi, v.Sigma, 8, 1; rng=Random.MersenneTwister(42))
+            @test cf[:, 1] ≈ endo_path[:, 1] atol=1e-6
+            @test size(shocks) == (8, 2)
+        end
+
+        @testset "forecast_conditional — all variables conditioned" begin
+            initval = y[end:end, :]
+            xdata = ones(4, 1)
+            endo_index = [1, 2]
+            endo_path = [0.1 0.2; 0.3 0.4; 0.5 0.6; 0.7 0.8]
+            cf, _ = forecast_conditional(endo_path, endo_index,
+                initval, xdata, v.Phi, v.Sigma, 4, 1; rng=Random.MersenneTwister(42))
+            @test cf ≈ endo_path atol=1e-6
         end
     end
 
@@ -250,22 +365,89 @@ end
         y, _, _ = generate_var_data(200, 3, 1)
         v = var_estimate(y, 1; constant=true)
 
-        c = compute_connectedness(v.Phi, v.Sigma, 12)
-        @test c isa ConnectednessResult
-        @test isfinite(c.index)
-        @test length(c.from_all_to_unit) == 3
-        @test length(c.net) == 3
+        @testset "compute_connectedness — type and dimensions" begin
+            c = compute_connectedness(v.Phi, v.Sigma, 12)
+            @test c isa ConnectednessResult
+            @test isfinite(c.index)
+            @test length(c.from_all_to_unit) == 3
+            @test length(c.from_unit_to_all) == 3
+            @test length(c.net) == 3
+        end
+
+        @testset "compute_connectedness — index in [0, 100]" begin
+            c = compute_connectedness(v.Phi, v.Sigma, 12)
+            @test 0.0 <= c.index <= 100.0
+        end
+
+        @testset "compute_connectedness — net spillovers sum to zero" begin
+            c = compute_connectedness(v.Phi, v.Sigma, 12)
+            @test sum(c.net) ≈ 0.0 atol=1e-10
+        end
+
+        @testset "compute_connectedness — normalized rows sum to 1" begin
+            c = compute_connectedness(v.Phi, v.Sigma, 12)
+            Theta = c.theta ./ sum(c.theta, dims=2)
+            for i in 1:3
+                @test sum(Theta[i, :]) ≈ 1.0 atol=1e-12
+            end
+        end
+
+        @testset "compute_connectedness — directional non-negative" begin
+            c = compute_connectedness(v.Phi, v.Sigma, 12)
+            @test all(c.from_all_to_unit .>= -1e-10)
+            @test all(c.from_unit_to_all .>= -1e-10)
+        end
+
+        @testset "connectedness_posterior — bands" begin
+            y2c, _, _ = generate_var_data(200, 2, 1)
+            result = bvar(y2c, 1; prior=FlatPrior(), K=100, hor=6, fhor=4, verbose=false)
+            cp = connectedness_posterior(result; horizon=6, conf_level=0.90)
+            @test cp.lower <= cp.median + 1e-10
+            @test cp.median <= cp.upper + 1e-10
+            @test all(0.0 .<= cp.draws .<= 100.0)
+        end
     end
 
     # ─── Historical Decomposition ─────────────────────────────────────────
     @testset "Historical Decomposition" begin
         y, _, _ = generate_var_data(200, 2, 1)
-        result = bvar(y, 1; prior=FlatPrior(), K=20, hor=6, fhor=4,
+        result = bvar(y, 1; prior=FlatPrior(), K=50, hor=6, fhor=4,
                        verbose=false)
 
-        hd = historical_decomposition(result)
-        @test hd isa HistDecompResult
-        @test size(hd.structural_shocks, 2) == 2
+        @testset "basic type and dimensions" begin
+            hd = historical_decomposition(result)
+            @test hd isa HistDecompResult
+            @test size(hd.structural_shocks, 2) == 2
+            Tu = size(result.e_draws, 1)
+            @test size(hd.decomposition) == (Tu, 2, 3)  # K shocks + deterministic
+        end
+
+        @testset "decomposition sums to observed data" begin
+            hd = historical_decomposition(result)
+            Tu = size(result.e_draws, 1)
+            p = result.nlags
+            data = result.var.data[p+1:end, :]
+            reconstructed = dropdims(sum(hd.decomposition, dims=3), dims=3)
+            @test reconstructed ≈ data[1:Tu, :] atol=1e-6
+        end
+
+        @testset "draw options" begin
+            hd_mean = historical_decomposition(result; draw=:mean)
+            hd_median = historical_decomposition(result; draw=:median)
+            hd_draw1 = historical_decomposition(result; draw=1)
+            @test hd_mean isa HistDecompResult
+            @test hd_median isa HistDecompResult
+            @test hd_draw1 isa HistDecompResult
+        end
+
+        @testset "draw=1 sums to data" begin
+            hd = historical_decomposition(result; draw=1)
+            Tu = size(result.e_draws, 1)
+            p = result.nlags
+            data = result.var.data[p+1:end, :]
+            reconstructed = dropdims(sum(hd.decomposition, dims=3), dims=3)
+            @test reconstructed ≈ data[1:Tu, :] atol=1e-6
+        end
     end
 
     # ─── Marginal Likelihood ──────────────────────────────────────────────
