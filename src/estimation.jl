@@ -128,15 +128,19 @@ function information_criteria(v::VAREstimate)
 end
 
 """
-    rfvar3(ydata, lags, xdata, breaks, lambda, mu)
+    rfvar3(ydata, lags, xdata, breaks, lambda, mu; ww=nothing)
 
 Reduced‑form VAR with dummy‑observation priors for sum‑of‑coefficients
 and co‑persistence (port of Sims's rfvar3.m).
 
+When `ww` is provided, observations are rescaled by `1/ww` before OLS
+(GLS correction for heteroskedasticity, matching MATLAB rfvar3.m).
+
 Returns `(B, u, xxi, y_out, X_out)`.
 """
 function rfvar3(ydata::AbstractMatrix, lags::Int, xdata::AbstractMatrix,
-                breaks::Vector{Int}, lambda::Float64, mu::Float64)
+                breaks::Vector{Int}, lambda::Float64, mu::Float64;
+                ww::Union{Nothing,AbstractVector{<:Real}}=nothing)
     T, nvar = size(ydata)
     nx = size(xdata, 2)
 
@@ -157,6 +161,15 @@ function rfvar3(ydata::AbstractMatrix, lags::Int, xdata::AbstractMatrix,
         X[idx, nvar*lags+1:end] = xdata[t, :]
     end
     y = ydata[smpl, :]
+
+    # Rescale for heteroskedasticity (GLS transform) — only actual data rows
+    if ww !== nothing
+        ww_ext = length(ww) < Tsmpl ?
+            vcat(Float64.(ww), ones(Tsmpl - length(ww))) :
+            Float64.(ww[1:Tsmpl])
+        y = y ./ ww_ext
+        X = X ./ ww_ext
+    end
 
     # Persistence dummies
     if lambda != 0 || mu > 0

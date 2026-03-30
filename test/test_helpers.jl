@@ -1,4 +1,5 @@
 # Shared test helper: generate simple VAR data for testing
+if !@isdefined(generate_var_data)
 function generate_var_data(T::Int, K::Int, p::Int; rng = Random.MersenneTwister(42))
     Phi_true = zeros(K * p, K)
     # Simple diagonal AR(1) coefficients
@@ -23,3 +24,4 @@ function generate_var_data(T::Int, K::Int, p::Int; rng = Random.MersenneTwister(
     end
     return y[101:end, :], Phi_true, Sigma_true
 end
+end  # if !@isdefined

@@ -65,12 +65,54 @@ function lp_irf(y::AbstractMatrix, p::Union{Int,Vector{Int}}, H::Int;
         ytmp = y[ph + hh + 1:T, :]
         Teff = size(ytmp, 1)
 
-        # RHS
-        Xr = _build_lp_rhs(y, T, K, ph, hh, constant, controls, proxy, clags)
+        # RHS — exclude proxy from regressors when doing 2SLS (proxy used as instrument)
+        proxy_in_rhs = identification == :iv ? nothing : proxy
+        Xr = _build_lp_rhs(y, T, K, ph, hh, constant, controls, proxy_in_rhs, clags)
         positions_nylags = 1:K*ph
         nk = size(Xr, 2)
 
-        if identification == :iv && proxy !== nothing
+        if identification == :proxy && proxy !== nothing
+            # ── LP-Proxy: OLS with proxy as direct regressor (MATLAB approach) ──
+            # Proxy is included in Xr; need to find its column positions
+            nc = controls !== nothing ? size(controls, 2) * (clags + 1) : 0
+            proxy_start = K * ph + nc + 1
+            proxy_end = proxy_start + ns - 1
+
+            # Remove rows where proxy has NaN
+            proxy_cols_in_Xr = Xr[:, proxy_start:proxy_end]
+            valid_mask = vec(.!any(isnan.(proxy_cols_in_Xr), dims=2))
+            ytmp_v = ytmp[valid_mask, :]
+            Xr_v = Xr[valid_mask, :]
+            Teff_v = size(ytmp_v, 1)
+
+            # OLS
+            beta = Xr_v \ ytmp_v
+            resid = ytmp_v - Xr_v * beta
+
+            # SE via Newey-West
+            if robust_se
+                se_beta = _newey_west_se(ytmp_v, Xr_v, beta, max(ph + hh + 1, 1))
+            else
+                se_beta = _ols_se(ytmp_v, Xr_v, beta)
+            end
+
+            stored_beta[hh + 1] = beta
+            stored_se[hh + 1] = se_beta
+
+            # Extract proxy coefficients as IRF (one row per proxy, K columns)
+            proxy_beta = beta[proxy_start:proxy_end, :]  # ns × K
+            proxy_se   = se_beta[proxy_start:proxy_end, :]  # ns × K
+
+            # Store: first K columns = responses to proxy shock 1
+            for s in 1:ns
+                for v in 1:K
+                    col_idx = (s - 1) * K + v
+                    irf_out[hh + 1, col_idx] = proxy_beta[s, v]
+                    std_out[hh + 1, col_idx] = proxy_se[s, v]
+                end
+            end
+
+        elseif identification == :iv && proxy !== nothing
             # ── LP‑IV: Two‑Stage Least Squares ──
             # Instrument the first K columns of lag‑1 (endogenous) with proxy
             n_endo = K  # instrument all K variables at lag 1

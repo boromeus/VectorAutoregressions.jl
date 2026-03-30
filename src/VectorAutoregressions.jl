@@ -24,6 +24,7 @@ include("estimation.jl")
 include("priors.jl")
 include("irf.jl")
 include("identification.jl")
+include("robust_bayes.jl")
 include("bayesian.jl")
 include("marginal_likelihood.jl")
 include("fevd.jl")
@@ -76,19 +77,19 @@ export compute_fevd, fevd_posterior
 export historical_decomposition
 
 # Forecasting
-export forecast_unconditional, forecast_conditional
+export forecast_unconditional, forecast_conditional, forecast_conditional_exo
 
 # Connectedness
 export compute_connectedness, connectedness_posterior
 
 # Marginal Likelihood
-export compute_marginal_likelihood, optimize_hyperparameters
+export compute_marginal_likelihood, optimize_hyperparameters, optimize_hyperparameters_optim
 
 # Local Projections
 export lp_irf, lp_lagorder, lp_bayesian, lp_marginal_likelihood
 
 # Kalman Filter
-export kalman_filter, mixed_freq_var
+export kalman_filter, mixed_freq_var, nowcast_bvar
 
 # Panel VAR
 export panel_var
@@ -107,5 +108,7 @@ export lagmatrix, companion_form, check_stability
 export rand_inverse_wishart, vech, ivech
 export commutation_matrix, duplication_matrix, elimination_matrix
 export var2ma, var2ss, ols_svd, generate_rotation_matrix, matrictint
+export fourthmom, thirdmom
+export robust_bayes_setup, robust_sigma_draw, robust_bayes_setup_skewness
 
 end # module

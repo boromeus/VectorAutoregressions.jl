@@ -8,16 +8,16 @@ priors.jl — Prior construction (dummy observations, conjugate, etc.)
 Estimate prior hyper‑parameters from OLS on each variable individually.
 Returns `(mu, sigma, delta)` — means, residual std, AR(1) coefficients.
 """
-function get_prior_moments(y::AbstractMatrix, p::Int = 1)
+function get_prior_moments(y::AbstractMatrix, p::Int=1)
     T, K = size(y)
-    mu = mean(y, dims = 1)'  # K×1
-    sigma = zeros(K)
-    delta = zeros(K)
+    mu = mean(y, dims=1)'  # K×1
+    sigma = Vector{Float64}(undef, K)
+    delta = Vector{Float64}(undef, K)
     for i in 1:K
         yi = y[:, i]
         xi = lagmatrix(reshape(yi, :, 1), p)
         xi = hcat(xi, ones(size(xi, 1)))
-        yi_dep = yi[(p + 1):end]
+        yi_dep = yi[p+1:end]
         b = xi \ yi_dep
         e = yi_dep - xi * b
         sigma[i] = sqrt(e' * e / length(yi_dep))
@@ -38,8 +38,8 @@ Build Minnesota‑prior dummy observations following Sims's `varprior.m`.
 Returns `(ydum, xdum, pbreaks)`.
 """
 function build_dummy_observations(prior::MinnesotaPrior, ny::Int, p::Int,
-        sig::AbstractVector{<:Real}, delta::AbstractVector{<:Real},
-        mu::AbstractVector{<:Real})
+                                  sig::AbstractVector{<:Real}, delta::AbstractVector{<:Real},
+                                  mu::AbstractVector{<:Real})
     nx = 1  # constant
     tight = prior.tau
     decay = prior.decay
@@ -52,7 +52,7 @@ function build_dummy_observations(prior::MinnesotaPrior, ny::Int, p::Int,
         for iv in 1:ny
             yd = zeros(p + 1, ny)
             xd = zeros(p + 1, nx)
-            yd[il + 1, iv] = il^decay * sig[iv]
+            yd[il+1, iv] = il^decay * sig[iv]
             push!(ydum_blocks, tight .* yd)
             push!(xdum_blocks, tight .* xd)
         end
@@ -67,7 +67,7 @@ function build_dummy_observations(prior::MinnesotaPrior, ny::Int, p::Int,
 
     ydum = vcat(ydum_blocks...)
     xdum = vcat(xdum_blocks...)
-    pbreaks_list = collect((p + 1):(p + 1):(size(ydum, 1)))
+    pbreaks_list = collect((p+1):(p+1):(size(ydum, 1)))
 
     # ── Variance‑of‑sigma dummy observations ──
     if omega_w > 0
@@ -83,7 +83,7 @@ function build_dummy_observations(prior::MinnesotaPrior, ny::Int, p::Int,
         end
     end
 
-    pbreaks = pbreaks_list[1:(end - 1)]
+    pbreaks = pbreaks_list[1:end-1]
     return ydum, xdum, pbreaks
 end
 
@@ -93,28 +93,34 @@ end
 Flat‑prior posterior computation.
 """
 function compute_prior_posterior(y::AbstractMatrix, p::Int, prior::FlatPrior;
-        constant::Bool = true, trend::Bool = false,
-        nexogenous::Int = 0)
+                                constant::Bool=true, trend::Bool=false,
+                                nexogenous::Int=0,
+                                exogenous_data::Union{Nothing,AbstractMatrix{<:Real}}=nothing,
+                                ww::Union{Nothing,AbstractVector{<:Real}}=nothing)
     T, K = size(y)
     nx = constant ? 1 : 0
     xdata = ones(T, nx)
     if trend
-        xdata = hcat(xdata, collect((1.0 - p):(T - p)))
+        xdata = hcat(xdata, collect(1.0-p:T-p))
+    end
+    # Append exogenous regressors (e.g. z-lags for exogenous block)
+    if exogenous_data !== nothing
+        xdata = hcat(xdata, exogenous_data)
     end
     idx = 1:T
 
-    B, u, xxi, y_ols, X_ols = rfvar3(y[idx, :], p, xdata, [T, T], 0.0, 0.0)
+    B, u, xxi, y_ols, X_ols = rfvar3(y[idx, :], p, xdata, [T, T], 0.0, 0.0; ww=ww)
     Tu = size(u, 1)
 
+    nx_total = size(xdata, 2)
     flat_adj = K + 1
-    post_df = Tu - K * p - nx + flat_adj - nexogenous
-    post_S = u' * u
+    post_df  = Tu - K * p - nx_total + flat_adj
+    post_S   = u' * u
     post_XXi = xxi
     post_PhiHat = B
 
-    prior_out = (
-        name = "Jeffrey", df = 0, S = zeros(K, K), XXi = zeros(0, 0), PhiHat = zeros(0, 0))
-    posterior = (df = post_df, S = post_S, XXi = post_XXi, PhiHat = post_PhiHat)
+    prior_out = (name="Jeffrey", df=0, S=zeros(K, K), XXi=zeros(0, 0), PhiHat=zeros(0, 0))
+    posterior = (df=post_df, S=post_S, XXi=post_XXi, PhiHat=post_PhiHat)
     return prior_out, posterior, B, u, xxi, y_ols, X_ols
 end
 
@@ -124,9 +130,11 @@ end
 Minnesota prior: build dummy observations, compute prior and posterior moments.
 """
 function compute_prior_posterior(y::AbstractMatrix, p::Int, prior::MinnesotaPrior;
-        constant::Bool = true, trend::Bool = false,
-        nexogenous::Int = 0, presample::Int = 0,
-        firstobs::Int = p+1)
+                                constant::Bool=true, trend::Bool=false,
+                                nexogenous::Int=0, presample::Int=0,
+                                firstobs::Int=p+1,
+                                exogenous_data::Union{Nothing,AbstractMatrix{<:Real}}=nothing,
+                                ww::Union{Nothing,AbstractVector{<:Real}}=nothing)
     T, K = size(y)
     nx = constant ? 1 : 0
 
@@ -138,18 +146,17 @@ function compute_prior_posterior(y::AbstractMatrix, p::Int, prior::MinnesotaPrio
 
     # Prior hyper from pre‑sample
     pre_start = max(1, firstobs - p - presample + 1)
-    pre_end = firstobs - 1
+    pre_end   = firstobs - 1
     y_pre = y[pre_start:pre_end, :]
-    sig = vec(std(y_pre, dims = 1))
+    sig = vec(std(y_pre, dims=1))
     # Guard against zero std (from tiny samples)
     sig[sig .== 0] .= 1.0
     sig[isnan.(sig)] .= 1.0
 
     _, sigma_ar, delta = get_prior_moments(y, 1)
 
-    ydum, xdum,
-    pbreaks = build_dummy_observations(prior, K, p, Float64.(sig), Float64.(delta),
-        Float64.(vec(mean(y_pre, dims = 1))))
+    ydum, xdum, pbreaks = build_dummy_observations(prior, K, p, Float64.(sig), Float64.(delta),
+                                                   Float64.(vec(mean(y_pre, dims=1))))
 
     # Actual data indices 
     idx = firstobs:T
@@ -157,28 +164,40 @@ function compute_prior_posterior(y::AbstractMatrix, p::Int, prior::MinnesotaPrio
     if trend
         xdata_full = hcat(xdata_full, collect(1.0:length(idx)))
     end
+    # Append exogenous regressors (e.g. z-lags for exogenous block)
+    if exogenous_data !== nothing
+        xdata_full = hcat(xdata_full, exogenous_data[idx, :])
+    end
+    nx_total = size(xdata_full, 2)
 
     # OLS on actual data only
-    B_ols, u_ols, xxi_ols,
-    y_ols, X_ols = rfvar3(y[idx, :], p, xdata_full,
-        [length(idx), length(idx)], 0.0, 0.0)
+    B_ols, u_ols, xxi_ols, y_ols, X_ols = rfvar3(y[idx, :], p, xdata_full,
+                                                   [length(idx), length(idx)], 0.0, 0.0; ww=ww)
 
     # Posterior (on actual + dummies) — dummies appended after actual data
-    post_data = vcat(y[max(1, firstobs - p):T, :], ydum)
+    post_data = vcat(y[max(1, firstobs-p):T, :], ydum)
     post_xdata_raw = ones(T - max(1, firstobs-p) + 1, nx)
     if trend
         post_xdata_raw = hcat(post_xdata_raw, collect(1.0:size(post_xdata_raw, 1)))
     end
-    post_xdata = vcat(post_xdata_raw, xdum)
+    # Append exogenous regressors for actual data rows
+    if exogenous_data !== nothing
+        post_xdata_raw = hcat(post_xdata_raw,
+                              exogenous_data[max(1, firstobs-p):T, :])
+    end
+    # Pad dummy observations with zeros for exogenous columns
+    ndum = size(xdum, 1)
+    nexo_cols = exogenous_data !== nothing ? size(exogenous_data, 2) : 0
+    xdum_padded = nexo_cols > 0 ? hcat(xdum, zeros(ndum, nexo_cols)) : xdum
+    post_xdata = vcat(post_xdata_raw, xdum_padded)
     T_actual = T - max(1, firstobs-p) + 1
     pbreaks_post = vcat(T_actual, T_actual .+ pbreaks)
 
-    B_post, u_post, xxi_post,
-    _, _ = rfvar3(post_data, p, post_xdata,
-        pbreaks_post, prior.lambda, prior.mu)
+    B_post, u_post, xxi_post, _, _ = rfvar3(post_data, p, post_xdata,
+                                              pbreaks_post, prior.lambda, prior.mu; ww=ww)
     Tu_post = size(u_post, 1)
-    post_df = Tu_post - K * p - nx
-    post_S = u_post' * u_post
+    post_df  = Tu_post - K * p - nx_total
+    post_S   = u_post' * u_post
     post_XXi = xxi_post
     post_PhiHat = B_post
 
@@ -188,16 +207,25 @@ function compute_prior_posterior(y::AbstractMatrix, p::Int, prior::MinnesotaPrio
     if trend
         pre_xdata_raw = hcat(pre_xdata_raw, collect(1.0:size(pre_xdata_raw, 1)))
     end
-    pre_xdata = vcat(pre_xdata_raw, xdum)
+    # Append exogenous regressors for presample rows (use zeros or available data)
+    if exogenous_data !== nothing
+        if pre_end <= size(exogenous_data, 1)
+            pre_xdata_raw = hcat(pre_xdata_raw,
+                                  exogenous_data[pre_start:pre_end, :])
+        else
+            pre_xdata_raw = hcat(pre_xdata_raw,
+                                  zeros(pre_end - pre_start + 1, nexo_cols))
+        end
+    end
+    pre_xdata = vcat(pre_xdata_raw, xdum_padded)
     T_pre_actual = pre_end - pre_start + 1
     pbreaks_prior = vcat(T_pre_actual, T_pre_actual .+ pbreaks)
 
-    B_prior, u_prior, xxi_prior,
-    _, _ = rfvar3(pre_data, p, pre_xdata,
-        pbreaks_prior, prior.lambda, prior.mu)
+    B_prior, u_prior, xxi_prior, _, _ = rfvar3(pre_data, p, pre_xdata,
+                                                 pbreaks_prior, prior.lambda, prior.mu)
     Tup = size(u_prior, 1)
-    prior_df = Tup - K * p - nx
-    prior_S = u_prior' * u_prior
+    prior_df  = Tup - K * p - nx_total
+    prior_S   = u_prior' * u_prior
     prior_XXi = xxi_prior
     prior_PhiHat = B_prior
 
@@ -205,13 +233,12 @@ function compute_prior_posterior(y::AbstractMatrix, p::Int, prior::MinnesotaPrio
         @warn "Too few prior df ($prior_df < $K). Using post_df for IW."
         prior_df = K + 1
         prior_S = Matrix{Float64}(I, K, K)
-        prior_XXi = 10.0 * I(K * p + nx)
+        prior_XXi = 10.0 * I(K * p + nx_total)
     end
 
-    prior_out = (name = "Minnesota", df = prior_df, S = prior_S,
-        XXi = prior_XXi, PhiHat = prior_PhiHat,
-        YYdum = ydum, XXdum = xdum)
-    posterior = (df = post_df, S = post_S, XXi = post_XXi, PhiHat = post_PhiHat)
+    prior_out = (name="Minnesota", df=prior_df, S=prior_S, XXi=prior_XXi, PhiHat=prior_PhiHat,
+                 YYdum=ydum, XXdum=xdum)
+    posterior = (df=post_df, S=post_S, XXi=post_XXi, PhiHat=post_PhiHat)
     return prior_out, posterior, B_ols, u_ols, xxi_ols, y_ols, X_ols
 end
 
@@ -221,12 +248,14 @@ end
 Conjugate MN‑IW prior posterior computation.
 """
 function compute_prior_posterior(y::AbstractMatrix, p::Int, prior::ConjugatePrior;
-        constant::Bool = true, trend::Bool = false,
-        nexogenous::Int = 0)
+                                constant::Bool=true, trend::Bool=false,
+                                nexogenous::Int=0,
+                                exogenous_data::Union{Nothing,AbstractMatrix{<:Real}}=nothing,
+                                ww::Union{Nothing,AbstractVector{<:Real}}=nothing)
     T, K = size(y)
     nx = constant ? 1 : 0
 
-    v = var_estimate(y, p; constant = constant, trend = trend)
+    v = var_estimate(y, p; constant=constant, trend=trend)
     X_ols = v.X
     Y_ols = v.Y
     u_ols = v.residuals
@@ -243,8 +272,8 @@ function compute_prior_posterior(y::AbstractMatrix, p::Int, prior::ConjugatePrio
              B_ols' * (X_ols' * X_ols) * B_ols -
              post_PhiHat' * (X_ols' * X_ols + Ai) * post_PhiHat
 
-    prior_out = (name = "Conjugate", df = prior.Sigma_df, S = prior.Sigma_scale,
-        XXi = prior.Phi_cov, PhiHat = prior.Phi_mean)
-    posterior = (df = post_df, S = post_S, XXi = post_XXi, PhiHat = post_PhiHat)
+    prior_out = (name="Conjugate", df=prior.Sigma_df, S=prior.Sigma_scale,
+                 XXi=prior.Phi_cov, PhiHat=prior.Phi_mean)
+    posterior = (df=post_df, S=post_S, XXi=post_XXi, PhiHat=post_PhiHat)
     return prior_out, posterior, B_ols, u_ols, xxi_ols, Y_ols, X_ols
 end

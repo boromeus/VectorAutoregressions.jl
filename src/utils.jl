@@ -9,15 +9,15 @@ Build the regressor matrix with `p` lags from data matrix `y` (T × K).
 Returns matrix of size (T-p) × (K*p [+ 1] [+ 1]).
 Lags are ordered as [y_{t-1} … y_{t-p} [constant] [trend]].
 """
-function lagmatrix(y::AbstractMatrix, p::Int; constant::Bool = false, trend::Bool = false)
+function lagmatrix(y::AbstractMatrix, p::Int; constant::Bool=false, trend::Bool=false)
     T, K = size(y)
     Teff = T - p
     ncols = K * p + (constant ? 1 : 0) + (trend ? 1 : 0)
-    X = zeros(Teff, ncols)
+    X = Matrix{Float64}(undef, Teff, ncols)
     for lag in 1:p
         @inbounds for t in 1:Teff
             for k in 1:K
-                X[t, (lag - 1) * K + k] = y[p + t - lag, k]
+                X[t, (lag-1)*K + k] = y[p + t - lag, k]
             end
         end
     end
@@ -47,9 +47,9 @@ Returns (K*p) × (K*p) companion matrix.
 function companion_form(Phi::AbstractMatrix, K::Int, p::Int)
     Kp = K * p
     F = zeros(Kp, Kp)
-    F[1:K, :] = Phi[1:(K * p), :]'
+    F[1:K, :] = Phi[1:K*p, :]'
     if p > 1
-        F[(K + 1):Kp, 1:(K * (p - 1))] = I(K*(p-1))
+        F[K+1:Kp, 1:K*(p-1)] = I(K*(p-1))
     end
     return F
 end
@@ -70,7 +70,7 @@ end
 Draw from the Inverse‑Wishart distribution IW(df, scale).
 Uses the Bartlett decomposition via SVD for numerical stability.
 """
-function rand_inverse_wishart(df::Int, scale::AbstractMatrix; rng::AbstractRNG = Random.default_rng())
+function rand_inverse_wishart(df::Int, scale::AbstractMatrix; rng::AbstractRNG=Random.default_rng())
     K = size(scale, 1)
     H_inv = cholesky(Hermitian(inv(scale))).U  # upper Cholesky of inv(scale)
     X = randn(rng, df, K) * H_inv
@@ -156,8 +156,8 @@ function duplication_matrix(n::Int)
     for j in 1:n
         for i in j:n
             col += 1
-            D[(j - 1) * n + i, col] = 1.0
-            D[(i - 1) * n + j, col] = 1.0
+            D[(j-1)*n + i, col] = 1.0
+            D[(i-1)*n + j, col] = 1.0
         end
     end
     return D
@@ -175,7 +175,7 @@ function elimination_matrix(n::Int)
     for j in 1:n
         for i in j:n
             col += 1
-            L[col, (j - 1) * n + i] = 1.0
+            L[col, (j-1)*n + i] = 1.0
         end
     end
     return L
@@ -197,8 +197,8 @@ function var2ma(Phi_ar::AbstractMatrix, horizon::Int)
         tmp = zeros(K, K)
         kstop = min(h, nlags + 1)
         for l in 2:kstop
-            span_ar = ((l - 2) * K + 1):((l - 2) * K + K)
-            tmp += MA[:, :, h - l + 1] * Phi_ar[span_ar, :]'
+            span_ar = (l-2)*K+1 : (l-2)*K+K
+            tmp += MA[:, :, h-l+1] * Phi_ar[span_ar, :]'
         end
         MA[:, :, h] = tmp
     end
@@ -220,11 +220,11 @@ function var2ss(Phi::AbstractMatrix, Sigma::AbstractMatrix, K::Int, p::Int)
     # steady‑state mean
     IminusA = I(K)
     for ell in 1:p
-        IminusA -= Phi[((ell - 1) * K + 1):(ell * K), :]'
+        IminusA -= Phi[(ell-1)*K+1:ell*K, :]'
     end
     nx = size(Phi, 1) - K * p
     if nx >= 1
-        const_vec = [IminusA \ Phi[end - nx + 1, :]'; zeros(K*(p-1), 1)]
+        const_vec = [IminusA \ Phi[end-nx+1, :]'; zeros(K*(p-1), 1)]
     else
         const_vec = zeros(K * p, 1)
     end
@@ -261,7 +261,7 @@ end
 Generate a random K×K orthonormal matrix via QR decomposition.
 Normalises to positive diagonal entries in R (Rubio‑Ramírez et al. 2010).
 """
-function generate_rotation_matrix(K::Int; rng::AbstractRNG = Random.default_rng())
+function generate_rotation_matrix(K::Int; rng::AbstractRNG=Random.default_rng())
     G = randn(rng, K, K)
     Q, R = qr(G)
     Q_mat = Matrix(Q)
@@ -295,8 +295,42 @@ end
 
 function ggammaln(m::Int, df::Int)
     if df <= m - 1
-        throw(ArgumentError("Too few df in ggammaln"))
+        error("Too few df in ggammaln")
     end
     garg = [0.5 * (df + 1 - i) for i in 1:m]
     return sum(loggamma.(garg))
+end
+
+"""
+    fourthmom(x)
+
+Fourth‑moment matrix of the rows of `x` (T × N).
+Computes `mean_t vech(x_t' x_t) vech(x_t' x_t)'`, matching MATLAB fourthmom.m.
+"""
+function fourthmom(x::AbstractMatrix)
+    T, N = size(x)
+    m = N * (N + 1) ÷ 2
+    K = zeros(m, m)
+    for t in 1:T
+        v = vech(x[t, :] * x[t, :]')
+        K .+= v * v'
+    end
+    return K ./ T
+end
+
+"""
+    thirdmom(x)
+
+Third‑moment matrix of the rows of `x` (T × N).
+Computes `mean_t x_t' vech(x_t' x_t)'`, matching MATLAB thirdmom.m.
+"""
+function thirdmom(x::AbstractMatrix)
+    T, N = size(x)
+    m = N * (N + 1) ÷ 2
+    S = zeros(N, m)
+    for t in 1:T
+        v = vech(x[t, :] * x[t, :]')
+        S .+= x[t, :] * v'
+    end
+    return S ./ T
 end

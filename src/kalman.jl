@@ -55,13 +55,9 @@ function kalman_filter(Phi::AbstractMatrix, Sigma::AbstractMatrix,
         obs_idx = findall(obs_mask)
         yt_obs = yt[obs_mask]
         Ct = C[obs_mask, :]
-        const_obs = const_vec[obs_mask]
-
-        # Demean
-        yt_dm = yt_obs - Ct * const_vec  # simplified: use const within state
 
         # Forecast
-        state_prior = A * stt[:, t]
+        state_prior = A * stt[:, t] + const_vec
         P_prior = A * ptt[:, :, t] * A' + B * Sigma * B'
         sfor[:, t] = state_prior
 
@@ -73,12 +69,12 @@ function kalman_filter(Phi::AbstractMatrix, Sigma::AbstractMatrix,
         end
 
         # Innovation
-        yt_pred = Ct * state_prior + const_obs
+        yt_pred = Ct * state_prior
         yfor[obs_idx, t] = yt_pred
         v = yt_obs - yt_pred
 
-        # Innovation covariance
-        F = Ct * P_prior * Ct'
+        # Innovation covariance (regularize for numerical stability)
+        F = Ct * P_prior * Ct' + 1e-10 * I(length(obs_idx))
         F = Hermitian(F)
 
         # Kalman gain
@@ -451,4 +447,53 @@ function _kalman_filter_mf(A, B, C, const_vec, Sigma,
     return (logL=logL,
             states=stt[:, 2:end]',
             smoothed=s_smooth')
+end
+
+# ─── Nowcasting via BVAR + Kalman ──────────────────────────────────────────────
+
+"""
+    nowcast_bvar(data_panels, bvar_result; n_draws=100, target_index=nothing, rng)
+
+Produce nowcasts using the BVAR posterior and Kalman filter/smoother.
+
+# Arguments
+- `data_panels`:   T × K × n_datasets array of data, with NaN for missing observations.
+- `bvar_result`:   BVARResult from `bvar()`.
+- `n_draws`:       number of random posterior draws to use.
+- `target_index`:  index of the target variable for nowcasting (default: 1).
+- `rng`:           random number generator.
+
+# Returns
+Named tuple `(nowcast, forecasts_no_shock, forecasts_with_shock)` where
+`nowcast` is T × n_draws × n_datasets.
+"""
+function nowcast_bvar(data_panels::AbstractArray{<:Real, 3},
+                      bvar_result;
+                      n_draws::Int=100,
+                      target_index::Int=1,
+                      rng::AbstractRNG=Random.default_rng())
+    T, ny, nD = size(data_panels)
+    lags = bvar_result.nlags
+    nk = size(bvar_result.Phi_draws, 1)
+    K_total = size(bvar_result.Phi_draws, 3)
+
+    n_draws = min(n_draws, K_total)
+    draw_indices = rand(rng, 1:K_total, n_draws)
+
+    NowCast = fill(NaN, T, n_draws, nD)
+
+    for j in 1:nD
+        data = data_panels[:, :, j]
+        for (i, idx) in enumerate(draw_indices)
+            Phi = bvar_result.Phi_draws[1:nk, :, idx]
+            Sigma = bvar_result.Sigma_draws[:, :, idx]
+
+            # Run Kalman filter/smoother with NaN handling
+            kf_result = kalman_filter(Phi, Sigma, data)
+            # Extract smoothed values for target variable
+            NowCast[:, i, j] = kf_result.smoothed[:, target_index]
+        end
+    end
+
+    return (nowcast=NowCast, draw_indices=draw_indices)
 end

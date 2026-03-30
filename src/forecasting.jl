@@ -145,3 +145,73 @@ function forecast_conditional(endo_path::AbstractMatrix,
 
     return cond_forecast, EPSn'
 end
+
+"""
+    forecast_conditional_exo(endo_path, endo_index, exo_index,
+                              forecast_initval, forecast_xdata,
+                              Phi, Sigma, fhor, p; Omega, rng)
+
+Conditional forecasting using only a **subset** of structural shocks
+(identified by `exo_index`) to match the endogenous path.
+
+Port of MATLAB `cforecasts2.m`.
+
+# Arguments
+- `endo_path`:     fhor × n_cond matrix of conditioned values.
+- `endo_index`:    vector of indices of conditioned variables.
+- `exo_index`:     vector of indices of structural shocks used for conditioning.
+                   Must satisfy `length(exo_index) == length(endo_index)`.
+- `Omega`:         K × K structural rotation matrix (default `I`).
+
+# Returns
+`(conditional_forecast, structural_shocks)` — each `fhor × K`.
+"""
+function forecast_conditional_exo(endo_path::AbstractMatrix,
+                                   endo_index::AbstractVector{Int},
+                                   exo_index::AbstractVector{Int},
+                                   forecast_initval::AbstractMatrix,
+                                   forecast_xdata::AbstractMatrix,
+                                   Phi::AbstractMatrix, Sigma::AbstractMatrix,
+                                   fhor::Int, p::Int;
+                                   Omega::AbstractMatrix=Matrix{Float64}(I, size(Sigma, 1), size(Sigma, 1)),
+                                   rng::AbstractRNG=Random.default_rng())
+    K = size(Sigma, 1)
+    length(endo_index) == length(exo_index) ||
+        throw(ArgumentError("length(exo_index) must equal length(endo_index)"))
+
+    # Draw random shocks; zero out exo_index positions (those will be solved)
+    EPSi = randn(rng, fhor, K)
+    EPSi[:, exo_index] .= 0.0
+
+    # Structural rotation
+    C = cholesky(Hermitian(Sigma)).L
+    R = C * Omega
+    # Reduced‑form shocks from non‑exo structural shocks
+    EPS = (R * EPSi')'
+
+    RR = R   # contemporaneous impact matrix
+
+    lags_data = copy(forecast_initval)
+    sims_with_endopath = zeros(fhor, K)
+    e = zeros(length(exo_index), fhor)
+
+    for t in 1:fhor
+        x = vcat(vec(reverse(lags_data, dims=1)'), forecast_xdata[t, :])
+        # Unconditional forecast with all shocks but exo_index
+        shock = EPS[t, :]
+        y_t = x' * Phi + shock'
+        # Solve for the exo_index shocks to hit the endo_path
+        gap = endo_path[t, :] .- y_t[endo_index]
+        e[:, t] = RR[endo_index, exo_index] \ gap
+        # Add the conditioning shocks
+        y_t = y_t + (RR[:, exo_index] * e[:, t])'
+        lags_data[1:end-1, :] = lags_data[2:end, :]
+        lags_data[end, :] = y_t
+        sims_with_endopath[t, :] = y_t
+    end
+
+    EPSn = copy(EPSi)
+    EPSn[:, exo_index] = e'
+
+    return sims_with_endopath, EPSn
+end
